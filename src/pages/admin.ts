@@ -71,6 +71,56 @@ export default function Admin() {
               color: #721c24;
               border: 1px solid #f5c6cb;
             }
+            .photos-section {
+              margin-top: 40px;
+              padding-top: 30px;
+              border-top: 1px solid #eee;
+            }
+            .photos-table {
+              width: 100%;
+              border-collapse: collapse;
+              margin-top: 20px;
+            }
+            .photos-table th,
+            .photos-table td {
+              padding: 12px;
+              text-align: left;
+              border-bottom: 1px solid #ddd;
+            }
+            .photos-table th {
+              background-color: #f8f9fa;
+              font-weight: 600;
+              color: #333;
+            }
+            .photos-table tr:hover {
+              background-color: #f5f5f5;
+            }
+            .photo-links {
+              display: flex;
+              gap: 10px;
+              flex-wrap: wrap;
+            }
+            .photo-links a {
+              color: #007bff;
+              text-decoration: none;
+              font-size: 12px;
+              padding: 4px 8px;
+              border: 1px solid #007bff;
+              border-radius: 3px;
+              transition: all 0.2s;
+            }
+            .photo-links a:hover {
+              background-color: #007bff;
+              color: white;
+            }
+            .checkbox-cell {
+              text-align: center;
+            }
+            .loading {
+              text-align: center;
+              padding: 20px;
+              color: #666;
+            }
           </style>
         </head>
         <body>
@@ -89,6 +139,13 @@ export default function Admin() {
             </form>
             
             <div id="status" class="status"></div>
+            
+            <div class="photos-section">
+              <h2>Photos Management</h2>
+              <div id="photosContainer">
+                <div class="loading">Loading photos...</div>
+              </div>
+            </div>
           </div>
 
           <script>
@@ -167,6 +224,117 @@ export default function Admin() {
 
             // Load config when page loads
             loadConfig();
+
+            // Photos management functions
+            async function loadPhotos() {
+              try {
+                const response = await fetch('/api/photos');
+                if (response.ok) {
+                  const photos = await response.json();
+                  renderPhotosTable(photos);
+                } else {
+                  document.getElementById('photosContainer')!.innerHTML = 
+                    '<div class="loading">Failed to load photos</div>';
+                }
+              } catch (error) {
+                console.error('Error loading photos:', error);
+                document.getElementById('photosContainer')!.innerHTML = 
+                  '<div class="loading">Failed to load photos</div>';
+              }
+            }
+
+            function renderPhotosTable(photos: any[]) {
+              if (photos.length === 0) {
+                document.getElementById('photosContainer')!.innerHTML = 
+                  '<div class="loading">No photos found</div>';
+                return;
+              }
+
+              let tableHTML = '<table class="photos-table">';
+              tableHTML += '<thead><tr>';
+              tableHTML += '<th>ID</th>';
+              tableHTML += '<th>Created</th>';
+              tableHTML += '<th>Public</th>';
+              tableHTML += '<th>Moderated</th>';
+              tableHTML += '<th>Links</th>';
+              tableHTML += '</tr></thead>';
+              tableHTML += '<tbody>';
+              
+              photos.forEach((photo: any) => {
+                tableHTML += '<tr>';
+                tableHTML += '<td>' + photo.id + '</td>';
+                tableHTML += '<td>' + (photo.create_timestamp ? new Date(photo.create_timestamp).toLocaleString() : 'N/A') + '</td>';
+                tableHTML += '<td class="checkbox-cell">';
+                tableHTML += '<input type="checkbox" ' + (photo.is_public ? 'checked' : '') + ' onchange="updatePhotoField(' + photo.id + ', \'is_public\', this.checked)">';
+                tableHTML += '</td>';
+                tableHTML += '<td class="checkbox-cell">';
+                tableHTML += '<input type="checkbox" ' + (photo.is_moderated ? 'checked' : '') + ' onchange="updatePhotoField(' + photo.id + ', \'is_moderated\', this.checked)">';
+                tableHTML += '</td>';
+                tableHTML += '<td><div class="photo-links">';
+                
+                if (photo.original_r2_url) {
+                  tableHTML += '<a href="' + photo.original_r2_url + '" target="_blank">Original</a>';
+                }
+                if (photo.phase1_replicate_url) {
+                  tableHTML += '<a href="' + photo.phase1_replicate_url + '" target="_blank">Phase1</a>';
+                }
+                if (photo.phase1_r2_url) {
+                  tableHTML += '<a href="' + photo.phase1_r2_url + '" target="_blank">Phase1 R2</a>';
+                }
+                if (photo.phase2_replicate_url) {
+                  tableHTML += '<a href="' + photo.phase2_replicate_url + '" target="_blank">Phase2</a>';
+                }
+                if (photo.phase2_r2_url) {
+                  tableHTML += '<a href="' + photo.phase2_r2_url + '" target="_blank">Phase2 R2</a>';
+                }
+                if (photo.phase3_replicate_url) {
+                  tableHTML += '<a href="' + photo.phase3_replicate_url + '" target="_blank">Phase3</a>';
+                }
+                if (photo.phase3_r2_url) {
+                  tableHTML += '<a href="' + photo.phase3_r2_url + '" target="_blank">Phase3 R2</a>';
+                }
+                
+                tableHTML += '</div></td>';
+                tableHTML += '</tr>';
+              });
+              
+              tableHTML += '</tbody></table>';
+              
+              document.getElementById('photosContainer')!.innerHTML = tableHTML;
+            }
+
+            async function updatePhotoField(photoId: number, field: string, value: boolean) {
+              try {
+                const response = await fetch('/api/photos/' + photoId, {
+                  method: 'PATCH',
+                  headers: {
+                    'Content-Type': 'application/json',
+                  },
+                  body: JSON.stringify({ [field]: value }),
+                });
+
+                if (response.ok) {
+                  showStatus(field + ' updated successfully!', 'success');
+                } else {
+                  showStatus('Failed to update ' + field, 'error');
+                  // Revert checkbox state
+                  const checkbox = (event as any).target;
+                  checkbox.checked = !checkbox.checked;
+                }
+              } catch (error) {
+                console.error('Error updating photo:', error);
+                showStatus('Failed to update ' + field, 'error');
+                // Revert checkbox state
+                const checkbox = (event as any).target;
+                checkbox.checked = !checkbox.checked;
+              }
+            }
+
+            // Make updatePhotoField globally available
+            window.updatePhotoField = updatePhotoField;
+
+            // Load photos when page loads
+            loadPhotos();
           </script>
         </body>
         </html>

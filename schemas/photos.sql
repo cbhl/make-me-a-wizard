@@ -1,0 +1,23 @@
+CREATE TABLE IF NOT EXISTS Photos (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  create_timestamp DATETIME,
+  update_timestamp DATETIME,
+  publish_timestamp DATETIME,
+  moderated_timestamp DATETIME,
+  original_r2_object_path TEXT,
+  original_r2_url TEXT,
+  phase1_replicate_prediction TEXT,
+  phase1_replicate_url TEXT,
+  phase1_r2_object_path TEXT,
+  phase1_r2_url TEXT,
+  phase2_replicate_prediction TEXT,
+  phase2_replicate_url TEXT,
+  phase2_r2_object_path TEXT,
+  phase2_r2_url TEXT,
+  phase3_replicate_prediction TEXT,
+  phase3_replicate_url TEXT,
+  phase3_r2_object_path TEXT,
+  phase3_r2_url TEXT,
+  is_public BOOLEAN,
+  is_moderated BOOLEAN
+);

@@ -8,6 +8,11 @@ binding = "KV"
 id = "repl-demo-2025-kv"
 preview_id = "repl-demo-2025-kv-preview"
 
+[[d1_databases]]
+binding = "repl_demo_2025_d1"
+database_name = "repl-demo-2025-d1"
+database_id = "ca56a7f3-1f53-416e-90a4-5b22a549efea"
+
 [[routes]]
 pattern = "demo.xianwen.dev"
 custom_domain = true
