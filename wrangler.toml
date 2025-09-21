@@ -1,6 +1,11 @@
 name = "make-me-a-wizard"
 main = "src/index.ts"
 compatibility_date = "2023-12-18"
+workers_dev = true
+
+[[routes]]
+pattern = "demo.xianwen.dev"
+custom_domain = true
 
 [env.production]
 name = "make-me-a-wizard"
