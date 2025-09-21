@@ -183,7 +183,12 @@ export default function Main() {
                   fileInfo.textContent = '';
                   uploadButton.style.display = 'none';
                 } else {
-                  showStatus('Upload failed: ' + (result.error || 'Unknown error'), 'error');
+                  let errorMessage = result.error || 'Unknown error';
+                  if (result.details) {
+                    errorMessage += ': ' + result.details;
+                  }
+                  showStatus('Upload failed: ' + errorMessage, 'error');
+                  console.error('Upload failed:', result);
                 }
               } catch (error) {
                 console.error('Upload error:', error);

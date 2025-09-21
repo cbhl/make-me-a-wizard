@@ -79,11 +79,34 @@ async function HandleApiRequest(request: Request, env: any): Promise<Response> {
 
     if (url.pathname === '/api/upload' && request.method === 'POST') {
         try {
+            console.log('Starting photo upload process');
+            
             const formData = await request.formData();
             const file = formData.get('photo') as File | null;
             
             if (!file) {
+                console.log('Upload failed: No file provided');
                 return new Response(JSON.stringify({ error: 'No file provided' }), {
+                    status: 400,
+                    headers: { 'Content-Type': 'application/json' },
+                });
+            }
+
+            console.log(`Processing file: ${file.name}, size: ${file.size} bytes, type: ${file.type}`);
+
+            // Validate file size (max 10MB)
+            if (file.size > 10 * 1024 * 1024) {
+                console.log(`Upload failed: File too large - ${file.size} bytes`);
+                return new Response(JSON.stringify({ error: 'File size must be less than 10MB' }), {
+                    status: 400,
+                    headers: { 'Content-Type': 'application/json' },
+                });
+            }
+
+            // Validate file type
+            if (!file.type.startsWith('image/')) {
+                console.log(`Upload failed: Invalid file type - ${file.type}`);
+                return new Response(JSON.stringify({ error: 'Please select an image file' }), {
                     status: 400,
                     headers: { 'Content-Type': 'application/json' },
                 });
@@ -94,45 +117,86 @@ async function HandleApiRequest(request: Request, env: any): Promise<Response> {
             const uuid = crypto.randomUUID();
             const objectKey = `uploads/${uuid}.${fileExtension}`;
             
+            console.log(`Generated object key: ${objectKey}`);
+            
             // Upload to R2
-            await env.R2.put(objectKey, file.stream(), {
-                httpMetadata: {
-                    contentType: file.type,
-                },
-            });
+            try {
+                console.log('Uploading to R2...');
+                await env.R2.put(objectKey, file.stream(), {
+                    httpMetadata: {
+                        contentType: file.type,
+                    },
+                });
+                console.log('R2 upload successful');
+            } catch (r2Error) {
+                console.error('R2 upload failed:', r2Error);
+                return new Response(JSON.stringify({ 
+                    error: 'Failed to upload file to storage',
+                    details: r2Error instanceof Error ? r2Error.message : 'Unknown R2 error'
+                }), {
+                    status: 500,
+                    headers: { 'Content-Type': 'application/json' },
+                });
+            }
             
             // Generate public URL (assuming custom domain or public bucket)
             const r2Url = `https://photos.demo.xianwen.dev/${objectKey}`;
+            console.log(`Generated R2 URL: ${r2Url}`);
             
             // Insert into database
-            const result = await env.repl_demo_2025_d1.prepare(`
-                INSERT INTO Photos (
-                    create_timestamp,
-                    update_timestamp,
-                    original_r2_object_path,
-                    original_r2_url,
-                    is_public,
-                    is_moderated
-                ) VALUES (?, ?, ?, ?, ?, ?)
-            `).bind(
-                new Date().toISOString(),
-                new Date().toISOString(),
-                objectKey,
-                r2Url,
-                1, // is_public = true
-                0  // is_moderated = false
-            ).run();
-            
-            return new Response(JSON.stringify({ 
-                id: result.meta.last_row_id,
-                message: 'Photo uploaded successfully'
-            }), {
-                headers: { 'Content-Type': 'application/json' },
-            });
+            try {
+                console.log('Inserting into database...');
+                const result = await env.repl_demo_2025_d1.prepare(`
+                    INSERT INTO Photos (
+                        create_timestamp,
+                        update_timestamp,
+                        original_r2_object_path,
+                        original_r2_url,
+                        is_public,
+                        is_moderated
+                    ) VALUES (?, ?, ?, ?, ?, ?)
+                `).bind(
+                    new Date().toISOString(),
+                    new Date().toISOString(),
+                    objectKey,
+                    r2Url,
+                    1, // is_public = true
+                    0  // is_moderated = false
+                ).run();
+                
+                console.log(`Database insert successful, photo ID: ${result.meta.last_row_id}`);
+                
+                return new Response(JSON.stringify({ 
+                    id: result.meta.last_row_id,
+                    message: 'Photo uploaded successfully'
+                }), {
+                    headers: { 'Content-Type': 'application/json' },
+                });
+            } catch (dbError) {
+                console.error('Database insert failed:', dbError);
+                // Try to clean up the R2 object
+                try {
+                    await env.R2.delete(objectKey);
+                    console.log('Cleaned up R2 object after database failure');
+                } catch (cleanupError) {
+                    console.error('Failed to cleanup R2 object:', cleanupError);
+                }
+                
+                return new Response(JSON.stringify({ 
+                    error: 'Failed to save photo metadata',
+                    details: dbError instanceof Error ? dbError.message : 'Unknown database error'
+                }), {
+                    status: 500,
+                    headers: { 'Content-Type': 'application/json' },
+                });
+            }
             
         } catch (error) {
             console.error('Upload error:', error);
-            return new Response(JSON.stringify({ error: 'Upload failed' }), {
+            return new Response(JSON.stringify({ 
+                error: 'Upload failed',
+                details: error instanceof Error ? error.message : 'Unknown error'
+            }), {
                 status: 500,
                 headers: { 'Content-Type': 'application/json' },
             });
@@ -151,14 +215,30 @@ async function HandleApiRequest(request: Request, env: any): Promise<Response> {
         }
 
         try {
+            console.log(`Starting workflow for photo ID: ${photoId}`);
+            
             // Check if photo exists
+            console.log('Checking if photo exists in database...');
             const photo = await env.repl_demo_2025_d1.prepare(
                 'SELECT id FROM Photos WHERE id = ?'
             ).bind(photoId).first();
 
             if (!photo) {
+                console.log(`Photo ${photoId} not found in database`);
                 return new Response(JSON.stringify({ error: 'Photo not found' }), {
                     status: 404,
+                    headers: { 'Content-Type': 'application/json' },
+                });
+            }
+
+            console.log(`Photo ${photoId} found, starting workflow...`);
+
+            // Check if workflow binding exists
+            if (!env.PHOTO_PROCESSING_WORKFLOW) {
+                const error = 'PHOTO_PROCESSING_WORKFLOW binding not found';
+                console.error(error);
+                return new Response(JSON.stringify({ error: 'Workflow service not available' }), {
+                    status: 500,
                     headers: { 'Content-Type': 'application/json' },
                 });
             }
@@ -169,6 +249,8 @@ async function HandleApiRequest(request: Request, env: any): Promise<Response> {
                 photoId: photoId
             });
 
+            console.log(`Workflow started successfully with ID: ${workflowInstance.id}`);
+
             return new Response(JSON.stringify({ 
                 workflowId: workflowInstance.id,
                 message: 'Photo processing workflow started'
@@ -178,7 +260,10 @@ async function HandleApiRequest(request: Request, env: any): Promise<Response> {
 
         } catch (error) {
             console.error('Workflow trigger error:', error);
-            return new Response(JSON.stringify({ error: 'Failed to start workflow' }), {
+            return new Response(JSON.stringify({ 
+                error: 'Failed to start workflow',
+                details: error instanceof Error ? error.message : 'Unknown error'
+            }), {
                 status: 500,
                 headers: { 'Content-Type': 'application/json' },
             });

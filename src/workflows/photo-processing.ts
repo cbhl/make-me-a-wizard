@@ -36,24 +36,40 @@ class PhotoProcessingWorkflow extends WorkflowEntrypoint {
     const { photoId } = event as PhotoProcessingInput;
     const env = step.env;
     
+    console.log(`Starting photo processing workflow for photo ID: ${photoId}`);
+    
     try {
       // Fetch photo from database
+      console.log(`Fetching photo ${photoId} from database...`);
       const photo = await this.fetchPhoto(photoId, env);
       if (!photo) {
-        throw new Error(`Photo with ID ${photoId} not found`);
+        const error = `Photo with ID ${photoId} not found`;
+        console.error(error);
+        throw new Error(error);
       }
+      console.log(`Photo found: ${photo.original_r2_url}`);
 
       // Phase 1: flux-kontext-pro
+      console.log(`Starting Phase 1 for photo ${photoId}`);
       await this.processPhase1(photo, env);
       
       // Phase 2: advanced-face-swap
+      console.log(`Starting Phase 2 for photo ${photoId}`);
       await this.processPhase2(photo, env);
       
       // Phase 3: hailuo-02-fast
+      console.log(`Starting Phase 3 for photo ${photoId}`);
       await this.processPhase3(photo, env);
       
+      console.log(`Photo processing workflow completed successfully for photo ${photoId}`);
+      
     } catch (error) {
-      console.error('Photo processing workflow failed:', error);
+      console.error(`Photo processing workflow failed for photo ${photoId}:`, error);
+      console.error('Error details:', {
+        message: error instanceof Error ? error.message : 'Unknown error',
+        stack: error instanceof Error ? error.stack : undefined,
+        photoId
+      });
       throw error;
     }
   }
@@ -228,67 +244,127 @@ class PhotoProcessingWorkflow extends WorkflowEntrypoint {
   }
 
   private async callReplicateModel(model: string, input: any, env: any): Promise<ReplicatePrediction> {
-    const response = await fetch('https://api.replicate.com/v1/predictions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Token ${env.REPLICATE_API_KEY}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        version: 'latest',
-        input
-      })
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`Replicate API error: ${response.status} ${errorText}`);
+    console.log(`Calling Replicate model: ${model}`);
+    console.log(`Input:`, JSON.stringify(input, null, 2));
+    
+    if (!env.REPLICATE_API_KEY) {
+      const error = 'REPLICATE_API_KEY environment variable is not set';
+      console.error(error);
+      throw new Error(error);
     }
+    
+    try {
+      const response = await fetch('https://api.replicate.com/v1/predictions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Token ${env.REPLICATE_API_KEY}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          version: 'latest',
+          input
+        })
+      });
 
-    return await response.json();
+      if (!response.ok) {
+        const errorText = await response.text();
+        const error = `Replicate API error: ${response.status} ${errorText}`;
+        console.error(error);
+        console.error('Response headers:', Object.fromEntries(response.headers.entries()));
+        throw new Error(error);
+      }
+
+      const result = await response.json() as ReplicatePrediction;
+      console.log(`Replicate API call successful for model ${model}, prediction ID: ${result.id}`);
+      return result;
+    } catch (error) {
+      console.error(`Failed to call Replicate model ${model}:`, error);
+      throw error;
+    }
   }
 
   private async pollReplicatePrediction(predictionId: string, env: any): Promise<ReplicatePrediction> {
     const maxAttempts = 60; // 5 minutes with 5-second intervals
     let attempts = 0;
 
+    console.log(`Starting to poll prediction ${predictionId}`);
+
     while (attempts < maxAttempts) {
-      const response = await fetch(`https://api.replicate.com/v1/predictions/${predictionId}`, {
-        headers: {
-          'Authorization': `Token ${env.REPLICATE_API_KEY}`,
-        },
-      });
+      try {
+        console.log(`Polling attempt ${attempts + 1}/${maxAttempts} for prediction ${predictionId}`);
+        
+        const response = await fetch(`https://api.replicate.com/v1/predictions/${predictionId}`, {
+          headers: {
+            'Authorization': `Token ${env.REPLICATE_API_KEY}`,
+          },
+        });
 
-      if (!response.ok) {
-        throw new Error(`Failed to fetch prediction status: ${response.status}`);
+        if (!response.ok) {
+          const errorText = await response.text();
+          const error = `Failed to fetch prediction status: ${response.status} ${errorText}`;
+          console.error(error);
+          throw new Error(error);
+        }
+
+        const prediction: ReplicatePrediction = await response.json();
+        console.log(`Prediction ${predictionId} status: ${prediction.status}`);
+        
+        if (prediction.status === 'succeeded' || prediction.status === 'failed' || prediction.status === 'canceled') {
+          console.log(`Prediction ${predictionId} completed with status: ${prediction.status}`);
+          if (prediction.status === 'failed') {
+            console.error(`Prediction ${predictionId} failed:`, prediction.error);
+          }
+          return prediction;
+        }
+
+        // Wait 5 seconds before next poll
+        console.log(`Waiting 5 seconds before next poll...`);
+        await new Promise(resolve => setTimeout(resolve, 5000));
+        attempts++;
+      } catch (error) {
+        console.error(`Error polling prediction ${predictionId} (attempt ${attempts + 1}):`, error);
+        if (attempts >= maxAttempts - 1) {
+          throw error;
+        }
+        // Wait before retrying
+        await new Promise(resolve => setTimeout(resolve, 5000));
+        attempts++;
       }
-
-      const prediction: ReplicatePrediction = await response.json();
-      
-      if (prediction.status === 'succeeded' || prediction.status === 'failed' || prediction.status === 'canceled') {
-        return prediction;
-      }
-
-      // Wait 5 seconds before next poll
-      await new Promise(resolve => setTimeout(resolve, 5000));
-      attempts++;
     }
 
-    throw new Error('Prediction polling timeout');
+    const error = `Prediction polling timeout after ${maxAttempts} attempts`;
+    console.error(error);
+    throw new Error(error);
   }
 
   private async downloadAndStoreInR2(url: string, objectPath: string, env: any): Promise<void> {
-    const response = await fetch(url);
-    if (!response.ok) {
-      throw new Error(`Failed to download file from ${url}: ${response.status}`);
-    }
+    console.log(`Downloading file from ${url} to R2 path: ${objectPath}`);
+    
+    try {
+      const response = await fetch(url);
+      if (!response.ok) {
+        const error = `Failed to download file from ${url}: ${response.status} ${response.statusText}`;
+        console.error(error);
+        throw new Error(error);
+      }
 
-    const arrayBuffer = await response.arrayBuffer();
-    await env.R2.put(objectPath, arrayBuffer, {
-      httpMetadata: {
-        contentType: response.headers.get('content-type') || 'application/octet-stream',
-      },
-    });
+      const contentType = response.headers.get('content-type') || 'application/octet-stream';
+      console.log(`Downloaded file, content-type: ${contentType}, size: ${response.headers.get('content-length') || 'unknown'} bytes`);
+
+      const arrayBuffer = await response.arrayBuffer();
+      console.log(`Downloaded ${arrayBuffer.byteLength} bytes, uploading to R2...`);
+      
+      await env.R2.put(objectPath, arrayBuffer, {
+        httpMetadata: {
+          contentType: contentType,
+        },
+      });
+      
+      console.log(`Successfully stored file in R2: ${objectPath}`);
+    } catch (error) {
+      console.error(`Failed to download and store file from ${url} to ${objectPath}:`, error);
+      throw error;
+    }
   }
 
   private getFileExtension(url: string): string {
