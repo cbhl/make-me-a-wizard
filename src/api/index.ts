@@ -75,6 +75,68 @@ async function HandleApiRequest(request: Request, env: any): Promise<Response> {
         
         return new Response('Bad Request', { status: 400 });
     }
+
+    if (url.pathname === '/api/upload' && request.method === 'POST') {
+        try {
+            const formData = await request.formData();
+            const file = formData.get('photo') as File | null;
+            
+            if (!file) {
+                return new Response(JSON.stringify({ error: 'No file provided' }), {
+                    status: 400,
+                    headers: { 'Content-Type': 'application/json' },
+                });
+            }
+
+            // Generate unique filename
+            const fileExtension = file.name.split('.').pop() || 'jpg';
+            const uuid = crypto.randomUUID();
+            const objectKey = `uploads/${uuid}.${fileExtension}`;
+            
+            // Upload to R2
+            await env.R2.put(objectKey, file.stream(), {
+                httpMetadata: {
+                    contentType: file.type,
+                },
+            });
+            
+            // Generate public URL (assuming custom domain or public bucket)
+            const r2Url = `https://repl-demo-2025.r2.dev/${objectKey}`;
+            
+            // Insert into database
+            const result = await env.repl_demo_2025_d1.prepare(`
+                INSERT INTO Photos (
+                    create_timestamp,
+                    update_timestamp,
+                    original_r2_object_path,
+                    original_r2_url,
+                    is_public,
+                    is_moderated
+                ) VALUES (?, ?, ?, ?, ?, ?)
+            `).bind(
+                new Date().toISOString(),
+                new Date().toISOString(),
+                objectKey,
+                r2Url,
+                1, // is_public = true
+                0  // is_moderated = false
+            ).run();
+            
+            return new Response(JSON.stringify({ 
+                id: result.meta.last_row_id,
+                message: 'Photo uploaded successfully'
+            }), {
+                headers: { 'Content-Type': 'application/json' },
+            });
+            
+        } catch (error) {
+            console.error('Upload error:', error);
+            return new Response(JSON.stringify({ error: 'Upload failed' }), {
+                status: 500,
+                headers: { 'Content-Type': 'application/json' },
+            });
+        }
+    }
     
     return new Response('Not Found', { 
         status: 404,

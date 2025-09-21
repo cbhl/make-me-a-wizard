@@ -13,6 +13,10 @@ binding = "repl_demo_2025_d1"
 database_name = "repl-demo-2025-d1"
 database_id = "ca56a7f3-1f53-416e-90a4-5b22a549efea"
 
+[[r2_buckets]]
+binding = "R2"
+bucket_name = "repl-demo-2025"
+
 [[routes]]
 pattern = "demo.xianwen.dev"
 custom_domain = true
