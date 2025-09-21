@@ -298,6 +298,25 @@ export default function Main() {
 
                 if (response.ok) {
                   showStatus('Photo uploaded successfully! ID: ' + result.id, 'success');
+                  
+                  // Trigger photo processing workflow
+                  try {
+                    const processResponse = await fetch('/api/photos/' + result.id + '/process', {
+                      method: 'POST'
+                    });
+                    
+                    if (processResponse.ok) {
+                      const processResult = await processResponse.json();
+                      showStatus('Photo uploaded and processing started! Workflow ID: ' + processResult.workflowId, 'success');
+                    } else {
+                      const processError = await processResponse.json();
+                      showStatus('Photo uploaded but processing failed to start: ' + (processError.error || 'Unknown error'), 'error');
+                    }
+                  } catch (processError) {
+                    console.error('Failed to trigger processing:', processError);
+                    showStatus('Photo uploaded but processing failed to start: Network error', 'error');
+                  }
+                  
                   // Reset form
                   photoInput.value = '';
                   fileInfo.textContent = '';
