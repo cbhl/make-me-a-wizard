@@ -1,4 +1,5 @@
 import { Main, Admin } from './pages';
+import { HandleApiRequest } from './api';
 
 export default {
   async fetch(request: Request, env: any, ctx: ExecutionContext): Promise<Response> {
@@ -21,17 +22,8 @@ export default {
       });
     }
     
-    if (url.pathname === '/api/demo') {
-      // API endpoint that returns JSON
-      const response = {
-        message: "Hello, Replicate!"
-      };
-      
-      return new Response(JSON.stringify(response), {
-        headers: {
-          'Content-Type': 'application/json',
-        },
-      });
+    if (url.pathname.startsWith('/api/')) {
+      return HandleApiRequest(request);
     }
     
     // 404 for any other routes
