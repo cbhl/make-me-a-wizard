@@ -1,4 +1,5 @@
 import { WorkflowEntrypoint } from 'cloudflare:workers';
+import Replicate from 'replicate';
 
 interface Env {
   repl_demo_2025_d1: D1Database;
@@ -38,6 +39,15 @@ interface ReplicatePrediction {
 }
 
 class PhotoProcessingWorkflow extends WorkflowEntrypoint<Env, PhotoProcessingInput> {
+  private replicate: Replicate;
+
+  constructor(ctx: ExecutionContext, env: Env) {
+    super(ctx, env);
+    this.replicate = new Replicate({
+      auth: env.REPLICATE_API_KEY,
+    });
+  }
+
   async run(event: any, step: any): Promise<void> {
     // Extract photoId from the payload
     const { payload } = event;
@@ -127,8 +137,7 @@ class PhotoProcessingWorkflow extends WorkflowEntrypoint<Env, PhotoProcessingInp
       {
         prompt: "Make me a wizard, Harry! Put me in front of a neutral, dark background.",
         input_image: photo.original_r2_url
-      },
-      this.env.REPLICATE_API_KEY
+      }
     );
 
     // Update database with prediction
@@ -138,7 +147,7 @@ class PhotoProcessingWorkflow extends WorkflowEntrypoint<Env, PhotoProcessingInp
     });
 
     // Poll until completion
-    const completedPrediction = await this.pollReplicatePrediction(prediction.id, this.env.REPLICATE_API_KEY);
+    const completedPrediction = await this.pollReplicatePrediction(prediction.id);
     
     if (completedPrediction.status !== 'succeeded') {
       throw new Error(`Phase 1 failed: ${completedPrediction.error || 'Unknown error'}`);
@@ -179,8 +188,7 @@ class PhotoProcessingWorkflow extends WorkflowEntrypoint<Env, PhotoProcessingInp
         target_image: photo.phase1_r2_url,
         swap_image: photo.original_r2_url,
         upscale: false
-      },
-      this.env.REPLICATE_API_KEY
+      }
     );
 
     // Update database with prediction
@@ -190,7 +198,7 @@ class PhotoProcessingWorkflow extends WorkflowEntrypoint<Env, PhotoProcessingInp
     });
 
     // Poll until completion
-    const completedPrediction = await this.pollReplicatePrediction(prediction.id, this.env.REPLICATE_API_KEY);
+    const completedPrediction = await this.pollReplicatePrediction(prediction.id);
     
     if (completedPrediction.status !== 'succeeded') {
       throw new Error(`Phase 2 failed: ${completedPrediction.error || 'Unknown error'}`);
@@ -231,8 +239,7 @@ class PhotoProcessingWorkflow extends WorkflowEntrypoint<Env, PhotoProcessingInp
         prompt: "a living portrait of a wizard from harry potter. keep motions subtle and gentle",
         first_frame_image: photo.phase2_r2_url,
         go_fast: true
-      },
-      this.env.REPLICATE_API_KEY
+      }
     );
 
     // Update database with prediction
@@ -242,7 +249,7 @@ class PhotoProcessingWorkflow extends WorkflowEntrypoint<Env, PhotoProcessingInp
     });
 
     // Poll until completion
-    const completedPrediction = await this.pollReplicatePrediction(prediction.id, this.env.REPLICATE_API_KEY);
+    const completedPrediction = await this.pollReplicatePrediction(prediction.id);
     
     if (completedPrediction.status !== 'succeeded') {
       throw new Error(`Phase 3 failed: ${completedPrediction.error || 'Unknown error'}`);
@@ -269,47 +276,25 @@ class PhotoProcessingWorkflow extends WorkflowEntrypoint<Env, PhotoProcessingInp
     console.log(`Phase 3 completed for photo ${photo.id}`);
   }
 
-  private async callReplicateModel(model: string, input: any, replicateApiKey: string): Promise<ReplicatePrediction> {
+  private async callReplicateModel(model: string, input: any): Promise<ReplicatePrediction> {
     console.log(`Calling Replicate model: ${model}`);
     console.log(`Input:`, JSON.stringify(input, null, 2));
     
-    if (!replicateApiKey) {
-      const error = 'replicateApiKey is required but not provided';
-      console.error(error);
-      throw new Error(error);
-    }
-    
     try {
-      const response = await fetch('https://api.replicate.com/v1/predictions', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Token ${replicateApiKey}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          version: 'latest',
-          input
-        })
+      const prediction = await this.replicate.predictions.create({
+        model: model,
+        input: input
       });
 
-      if (!response.ok) {
-        const errorText = await response.text();
-        const error = `Replicate API error: ${response.status} ${errorText}`;
-        console.error(error);
-        console.error('Response headers:', Object.fromEntries(response.headers.entries()));
-        throw new Error(error);
-      }
-
-      const result = await response.json() as ReplicatePrediction;
-      console.log(`Replicate API call successful for model ${model}, prediction ID: ${result.id}`);
-      return result;
+      console.log(`Replicate API call successful for model ${model}, prediction ID: ${prediction.id}`);
+      return prediction as ReplicatePrediction;
     } catch (error) {
       console.error(`Failed to call Replicate model ${model}:`, error);
       throw error;
     }
   }
 
-  private async pollReplicatePrediction(predictionId: string, replicateApiKey: string): Promise<ReplicatePrediction> {
+  private async pollReplicatePrediction(predictionId: string): Promise<ReplicatePrediction> {
     const maxAttempts = 60; // 5 minutes with 5-second intervals
     let attempts = 0;
 
@@ -319,20 +304,7 @@ class PhotoProcessingWorkflow extends WorkflowEntrypoint<Env, PhotoProcessingInp
       try {
         console.log(`Polling attempt ${attempts + 1}/${maxAttempts} for prediction ${predictionId}`);
         
-        const response = await fetch(`https://api.replicate.com/v1/predictions/${predictionId}`, {
-          headers: {
-            'Authorization': `Token ${replicateApiKey}`,
-          },
-        });
-
-        if (!response.ok) {
-          const errorText = await response.text();
-          const error = `Failed to fetch prediction status: ${response.status} ${errorText}`;
-          console.error(error);
-          throw new Error(error);
-        }
-
-        const prediction: ReplicatePrediction = await response.json();
+        const prediction = await this.replicate.predictions.get(predictionId);
         console.log(`Prediction ${predictionId} status: ${prediction.status}`);
         
         if (prediction.status === 'succeeded' || prediction.status === 'failed' || prediction.status === 'canceled') {
@@ -340,7 +312,7 @@ class PhotoProcessingWorkflow extends WorkflowEntrypoint<Env, PhotoProcessingInp
           if (prediction.status === 'failed') {
             console.error(`Prediction ${predictionId} failed:`, prediction.error);
           }
-          return prediction;
+          return prediction as ReplicatePrediction;
         }
 
         // Wait 5 seconds before next poll
