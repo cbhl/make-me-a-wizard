@@ -3,6 +3,11 @@ main = "src/index.ts"
 compatibility_date = "2023-12-18"
 workers_dev = true
 
+[[kv_namespaces]]
+binding = "KV"
+id = "repl-demo-2025-kv"
+preview_id = "repl-demo-2025-kv-preview"
+
 [[routes]]
 pattern = "demo.xianwen.dev"
 custom_domain = true

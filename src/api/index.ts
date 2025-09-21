@@ -1,4 +1,6 @@
-async function HandleApiRequest(request: Request): Promise<Response> {
+import { HandleConfigRequest } from './config';
+
+async function HandleApiRequest(request: Request, env: any): Promise<Response> {
     const url = new URL(request.url);
     if (!url.pathname.startsWith('/api/')) {
         return new Response('Internal Server Error', { 
@@ -21,6 +23,11 @@ async function HandleApiRequest(request: Request): Promise<Response> {
         },
         });
     }
+
+    if (url.pathname === '/api/config') {
+        return HandleConfigRequest(request, env);
+    }
+    
     return new Response('Not Found', { 
         status: 404,
         headers: {

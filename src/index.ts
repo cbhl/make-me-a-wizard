@@ -23,7 +23,7 @@ export default {
     }
     
     if (url.pathname.startsWith('/api/')) {
-      return HandleApiRequest(request);
+      return HandleApiRequest(request, env);
     }
     
     // 404 for any other routes
