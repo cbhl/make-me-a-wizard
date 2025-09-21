@@ -101,7 +101,7 @@ async function HandleApiRequest(request: Request, env: any): Promise<Response> {
             });
             
             // Generate public URL (assuming custom domain or public bucket)
-            const r2Url = `https://repl-demo-2025.r2.dev/${objectKey}`;
+            const r2Url = `https://photos.demo.xianwen.dev/${objectKey}`;
             
             // Insert into database
             const result = await env.repl_demo_2025_d1.prepare(`
