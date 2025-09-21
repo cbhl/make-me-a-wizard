@@ -11,7 +11,7 @@ export default {
         <head>
           <meta charset="UTF-8">
           <meta name="viewport" content="width=device-width, initial-scale=1.0">
-          <title>Hello, World!</title>
+          <title>Hello, Replicate!</title>
           <style>
             body {
               font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
@@ -45,7 +45,7 @@ export default {
         </head>
         <body>
           <div class="container">
-            <h1>Hello, World!</h1>
+            <h1>Hello, Replicate!</h1>
             <p class="subtitle">Welcome to your Cloudflare Workers application</p>
           </div>
         </body>
@@ -62,7 +62,7 @@ export default {
     if (url.pathname === '/api/demo') {
       // API endpoint that returns JSON
       const response = {
-        message: "Hello, World!"
+        message: "Hello, Replicate!"
       };
       
       return new Response(JSON.stringify(response), {
