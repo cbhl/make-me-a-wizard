@@ -233,19 +233,19 @@ export default function Admin() {
                   const photos = await response.json();
                   renderPhotosTable(photos);
                 } else {
-                  document.getElementById('photosContainer')!.innerHTML = 
+                  document.getElementById('photosContainer').innerHTML = 
                     '<div class="loading">Failed to load photos</div>';
                 }
               } catch (error) {
                 console.error('Error loading photos:', error);
-                document.getElementById('photosContainer')!.innerHTML = 
+                document.getElementById('photosContainer').innerHTML = 
                   '<div class="loading">Failed to load photos</div>';
               }
             }
 
-            function renderPhotosTable(photos: any[]) {
+            function renderPhotosTable(photos) {
               if (photos.length === 0) {
-                document.getElementById('photosContainer')!.innerHTML = 
+                document.getElementById('photosContainer').innerHTML = 
                   '<div class="loading">No photos found</div>';
                 return;
               }
@@ -260,15 +260,15 @@ export default function Admin() {
               tableHTML += '</tr></thead>';
               tableHTML += '<tbody>';
               
-              photos.forEach((photo: any) => {
+              photos.forEach((photo) => {
                 tableHTML += '<tr>';
                 tableHTML += '<td>' + photo.id + '</td>';
                 tableHTML += '<td>' + (photo.create_timestamp ? new Date(photo.create_timestamp).toLocaleString() : 'N/A') + '</td>';
                 tableHTML += '<td class="checkbox-cell">';
-                tableHTML += '<input type="checkbox" ' + (photo.is_public ? 'checked' : '') + ' onchange="updatePhotoField(' + photo.id + ', \'is_public\', this.checked)">';
+                tableHTML += '<input type="checkbox" ' + (photo.is_public ? 'checked' : '') + ' onchange="updatePhotoField(' + photo.id + ', \\'is_public\\', this.checked)">';
                 tableHTML += '</td>';
                 tableHTML += '<td class="checkbox-cell">';
-                tableHTML += '<input type="checkbox" ' + (photo.is_moderated ? 'checked' : '') + ' onchange="updatePhotoField(' + photo.id + ', \'is_moderated\', this.checked)">';
+                tableHTML += '<input type="checkbox" ' + (photo.is_moderated ? 'checked' : '') + ' onchange="updatePhotoField(' + photo.id + ', \\'is_moderated\\', this.checked)">';
                 tableHTML += '</td>';
                 tableHTML += '<td><div class="photo-links">';
                 
@@ -300,10 +300,10 @@ export default function Admin() {
               
               tableHTML += '</tbody></table>';
               
-              document.getElementById('photosContainer')!.innerHTML = tableHTML;
+              document.getElementById('photosContainer').innerHTML = tableHTML;
             }
 
-            async function updatePhotoField(photoId: number, field: string, value: boolean) {
+            async function updatePhotoField(photoId, field, value) {
               try {
                 const response = await fetch('/api/photos/' + photoId, {
                   method: 'PATCH',
@@ -318,14 +318,14 @@ export default function Admin() {
                 } else {
                   showStatus('Failed to update ' + field, 'error');
                   // Revert checkbox state
-                  const checkbox = (event as any).target;
+                  const checkbox = event.target;
                   checkbox.checked = !checkbox.checked;
                 }
               } catch (error) {
                 console.error('Error updating photo:', error);
                 showStatus('Failed to update ' + field, 'error');
                 // Revert checkbox state
-                const checkbox = (event as any).target;
+                const checkbox = event.target;
                 checkbox.checked = !checkbox.checked;
               }
             }
