@@ -1,0 +1,19 @@
+{
+  "name": "make-me-a-wizard",
+  "version": "1.0.0",
+  "description": "A minimal Cloudflare Workers application",
+  "main": "src/index.ts",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "build": "wrangler deploy --dry-run"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20231218.0",
+    "typescript": "^5.3.3",
+    "wrangler": "^3.19.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

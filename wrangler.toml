@@ -1,0 +1,9 @@
+name = "make-me-a-wizard"
+main = "src/index.ts"
+compatibility_date = "2023-12-18"
+
+[env.production]
+name = "make-me-a-wizard"
+
+[env.staging]
+name = "make-me-a-wizard-staging"
