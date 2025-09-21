@@ -308,7 +308,7 @@ export default function Main() {
                     
                     if (processResponse.ok) {
                       const processResult = await processResponse.json();
-                      showStatus('Photo uploaded and processing started! Workflow ID: ' + processResult.workflowId, 'success');
+                      showStatus('Photo uploaded and processing started! Workflow ID: ' + processResult.workflowId + '. The result will show up in a few minutes.', 'success');
                     } else {
                       const processError = await processResponse.json();
                       showStatus('Photo uploaded but processing failed to start: ' + (processError.error || 'Unknown error'), 'error');
