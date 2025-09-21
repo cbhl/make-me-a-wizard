@@ -26,6 +26,10 @@ name = "photo-processing"
 binding = "PHOTO_PROCESSING_WORKFLOW"
 class_name = "PhotoProcessingWorkflow"
 
+# Enable Workers Logs
+[observability]
+enabled = true
+
 [env.production]
 name = "make-me-a-wizard"
 

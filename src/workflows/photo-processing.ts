@@ -33,7 +33,8 @@ interface ReplicatePrediction {
 
 class PhotoProcessingWorkflow extends WorkflowEntrypoint {
   async run(event: any, step: any): Promise<void> {
-    const { photoId } = event as PhotoProcessingInput;
+    const { params } = event;
+    const { photoId } = params as PhotoProcessingInput;
     const env = step.env;
     
     console.log(`Starting photo processing workflow for photo ID: ${photoId}`);

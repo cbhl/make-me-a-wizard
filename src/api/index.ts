@@ -245,9 +245,13 @@ async function HandleApiRequest(request: Request, env: any): Promise<Response> {
 
             // Start the workflow
             const workflow = env.PHOTO_PROCESSING_WORKFLOW;
-            const workflowInstance = workflow.create({
-                photoId: photoId
+            const workflowInstancePromise : Promise<WorkflowInstance> = workflow.create({
+                params: {
+                    photoId: photoId
+                }
             });
+
+            const workflowInstance = await workflowInstancePromise;
 
             console.log(`Workflow started successfully with ID: ${workflowInstance.id}`);
 
