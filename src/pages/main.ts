@@ -216,6 +216,7 @@ export default function Main() {
                   videoElement.controls = true;
                   videoElement.muted = true;
                   videoElement.loop = true;
+                  videoElement.autoplay = true;
                   
                   const meta = document.createElement('div');
                   meta.className = 'video-meta';
@@ -237,7 +238,7 @@ export default function Main() {
             // Start polling for videos
             function startPolling() {
               loadVideos(); // Load immediately
-              pollInterval = setInterval(loadVideos, 5000); // Poll every 5 seconds
+              pollInterval = setInterval(loadVideos, 60000); // Poll every 1 minute
             }
 
             // Stop polling

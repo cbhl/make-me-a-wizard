@@ -138,7 +138,7 @@ class PhotoProcessingWorkflow extends WorkflowEntrypoint<Env, PhotoProcessingInp
     const prediction = await this.callReplicateModel(
       'black-forest-labs/flux-kontext-pro',
       {
-        prompt: "Make me a wizard, Harry! Put me in front of a neutral, dark background.",
+        prompt: "Make me a witch or wizard, Harry! Put me in front of a neutral, dark background and give me robes and a hat.",
         input_image: photo.original_r2_url
       }
     );
