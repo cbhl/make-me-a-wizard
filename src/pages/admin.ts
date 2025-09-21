@@ -121,6 +121,23 @@ export default function Admin() {
               padding: 20px;
               color: #666;
             }
+            .process-btn {
+              background-color: #28a745;
+              color: white;
+              border: none;
+              padding: 6px 12px;
+              border-radius: 4px;
+              font-size: 12px;
+              cursor: pointer;
+              transition: background-color 0.2s;
+            }
+            .process-btn:hover {
+              background-color: #218838;
+            }
+            .process-btn:disabled {
+              background-color: #6c757d;
+              cursor: not-allowed;
+            }
           </style>
         </head>
         <body>
@@ -256,6 +273,7 @@ export default function Admin() {
               tableHTML += '<th>Created</th>';
               tableHTML += '<th>Public</th>';
               tableHTML += '<th>Moderated</th>';
+              tableHTML += '<th>Process</th>';
               tableHTML += '<th>Links</th>';
               tableHTML += '</tr></thead>';
               tableHTML += '<tbody>';
@@ -269,6 +287,9 @@ export default function Admin() {
                 tableHTML += '</td>';
                 tableHTML += '<td class="checkbox-cell">';
                 tableHTML += '<input type="checkbox" ' + (photo.is_moderated ? 'checked' : '') + ' onchange="updatePhotoField(' + photo.id + ', \\'is_moderated\\', this.checked)">';
+                tableHTML += '</td>';
+                tableHTML += '<td>';
+                tableHTML += '<button onclick="processPhoto(' + photo.id + ')" class="process-btn" id="process-btn-' + photo.id + '">Process</button>';
                 tableHTML += '</td>';
                 tableHTML += '<td><div class="photo-links">';
                 
@@ -330,8 +351,82 @@ export default function Admin() {
               }
             }
 
-            // Make updatePhotoField globally available
+            // Process photo workflow
+            async function processPhoto(photoId) {
+              const button = document.getElementById('process-btn-' + photoId);
+              const originalText = button.textContent;
+              
+              try {
+                button.disabled = true;
+                button.textContent = 'Processing...';
+                
+                const response = await fetch('/api/photos/' + photoId + '/process', {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                  },
+                });
+
+                if (response.ok) {
+                  const result = await response.json();
+                  showStatus('Photo processing workflow started! Workflow ID: ' + result.workflowId, 'success');
+                  
+                  // Start polling for status updates
+                  pollPhotoStatus(photoId);
+                } else {
+                  const error = await response.json();
+                  showStatus('Failed to start processing: ' + (error.error || 'Unknown error'), 'error');
+                  button.disabled = false;
+                  button.textContent = originalText;
+                }
+              } catch (error) {
+                console.error('Error processing photo:', error);
+                showStatus('Failed to start processing', 'error');
+                button.disabled = false;
+                button.textContent = originalText;
+              }
+            }
+
+            // Poll photo processing status
+            async function pollPhotoStatus(photoId) {
+              const button = document.getElementById('process-btn-' + photoId);
+              
+              try {
+                const response = await fetch('/api/photos/' + photoId + '/status');
+                if (response.ok) {
+                  const status = await response.json();
+                  
+                  if (status.status === 'completed') {
+                    button.textContent = 'Completed';
+                    button.style.backgroundColor = '#28a745';
+                    showStatus('Photo processing completed!', 'success');
+                    // Reload photos to show new results
+                    loadPhotos();
+                  } else if (status.status === 'processing') {
+                    button.textContent = 'Processing... (' + status.progress + '%)';
+                    // Continue polling
+                    setTimeout(() => pollPhotoStatus(photoId), 2000);
+                  } else {
+                    button.textContent = 'Process';
+                    button.disabled = false;
+                    showStatus('Processing failed or pending', 'error');
+                  }
+                } else {
+                  button.textContent = 'Process';
+                  button.disabled = false;
+                  showStatus('Failed to get processing status', 'error');
+                }
+              } catch (error) {
+                console.error('Error polling status:', error);
+                button.textContent = 'Process';
+                button.disabled = false;
+                showStatus('Failed to get processing status', 'error');
+              }
+            }
+
+            // Make functions globally available
             window.updatePhotoField = updatePhotoField;
+            window.processPhoto = processPhoto;
 
             // Load photos when page loads
             loadPhotos();

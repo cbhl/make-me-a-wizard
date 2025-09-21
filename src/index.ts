@@ -1,5 +1,8 @@
 import { Main, Admin } from './pages';
 import { HandleApiRequest } from './api';
+import PhotoProcessingWorkflow from './workflows/photo-processing';
+
+export { PhotoProcessingWorkflow };
 
 export default {
   async fetch(request: Request, env: any, ctx: ExecutionContext): Promise<Response> {

@@ -5,8 +5,8 @@ workers_dev = true
 
 [[kv_namespaces]]
 binding = "KV"
-id = "repl-demo-2025-kv"
-preview_id = "repl-demo-2025-kv-preview"
+id = "937dcc5e89ae43f686cdb166a56743be"
+preview_id = "2741410f9eb94bcb925a7fc4c02eb99f"
 
 [[d1_databases]]
 binding = "repl_demo_2025_d1"
@@ -20,6 +20,11 @@ bucket_name = "repl-demo-2025"
 [[routes]]
 pattern = "demo.xianwen.dev"
 custom_domain = true
+
+[[workflows]]
+name = "photo-processing"
+binding = "PHOTO_PROCESSING_WORKFLOW"
+class_name = "PhotoProcessingWorkflow"
 
 [env.production]
 name = "make-me-a-wizard"

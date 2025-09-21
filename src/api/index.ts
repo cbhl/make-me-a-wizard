@@ -1,4 +1,5 @@
 import { HandleConfigRequest } from './config';
+import PhotoProcessingWorkflow from '../workflows/photo-processing';
 
 async function HandleApiRequest(request: Request, env: any): Promise<Response> {
     const url = new URL(request.url);
@@ -132,6 +133,130 @@ async function HandleApiRequest(request: Request, env: any): Promise<Response> {
         } catch (error) {
             console.error('Upload error:', error);
             return new Response(JSON.stringify({ error: 'Upload failed' }), {
+                status: 500,
+                headers: { 'Content-Type': 'application/json' },
+            });
+        }
+    }
+
+    if (url.pathname.startsWith('/api/photos/') && url.pathname.endsWith('/process') && request.method === 'POST') {
+        // Trigger photo processing workflow
+        const photoId = parseInt(url.pathname.split('/')[3]);
+        
+        if (isNaN(photoId)) {
+            return new Response(JSON.stringify({ error: 'Invalid photo ID' }), {
+                status: 400,
+                headers: { 'Content-Type': 'application/json' },
+            });
+        }
+
+        try {
+            // Check if photo exists
+            const photo = await env.repl_demo_2025_d1.prepare(
+                'SELECT id FROM Photos WHERE id = ?'
+            ).bind(photoId).first();
+
+            if (!photo) {
+                return new Response(JSON.stringify({ error: 'Photo not found' }), {
+                    status: 404,
+                    headers: { 'Content-Type': 'application/json' },
+                });
+            }
+
+            // Start the workflow
+            const workflow = env.PHOTO_PROCESSING_WORKFLOW;
+            const workflowInstance = workflow.create({
+                photoId: photoId
+            });
+
+            return new Response(JSON.stringify({ 
+                workflowId: workflowInstance.id,
+                message: 'Photo processing workflow started'
+            }), {
+                headers: { 'Content-Type': 'application/json' },
+            });
+
+        } catch (error) {
+            console.error('Workflow trigger error:', error);
+            return new Response(JSON.stringify({ error: 'Failed to start workflow' }), {
+                status: 500,
+                headers: { 'Content-Type': 'application/json' },
+            });
+        }
+    }
+
+    if (url.pathname.startsWith('/api/photos/') && url.pathname.endsWith('/status') && request.method === 'GET') {
+        // Get photo processing status
+        const photoId = parseInt(url.pathname.split('/')[3]);
+        
+        if (isNaN(photoId)) {
+            return new Response(JSON.stringify({ error: 'Invalid photo ID' }), {
+                status: 400,
+                headers: { 'Content-Type': 'application/json' },
+            });
+        }
+
+        try {
+            const photo = await env.repl_demo_2025_d1.prepare(
+                'SELECT * FROM Photos WHERE id = ?'
+            ).bind(photoId).first();
+
+            if (!photo) {
+                return new Response(JSON.stringify({ error: 'Photo not found' }), {
+                    status: 404,
+                    headers: { 'Content-Type': 'application/json' },
+                });
+            }
+
+            // Determine processing status
+            let status = 'pending';
+            let progress = 0;
+            let currentPhase = '';
+
+            if (photo.phase1_r2_url) {
+                progress = 100;
+                status = 'completed';
+                currentPhase = 'completed';
+            } else if (photo.phase3_replicate_prediction) {
+                progress = 90;
+                status = 'processing';
+                currentPhase = 'phase3';
+            } else if (photo.phase2_replicate_prediction) {
+                progress = 60;
+                status = 'processing';
+                currentPhase = 'phase2';
+            } else if (photo.phase1_replicate_prediction) {
+                progress = 30;
+                status = 'processing';
+                currentPhase = 'phase1';
+            }
+
+            return new Response(JSON.stringify({
+                photoId: photo.id,
+                status,
+                progress,
+                currentPhase,
+                results: {
+                    phase1: photo.phase1_r2_url ? {
+                        url: photo.phase1_r2_url,
+                        completed: true
+                    } : null,
+                    phase2: photo.phase2_r2_url ? {
+                        url: photo.phase2_r2_url,
+                        completed: true
+                    } : null,
+                    phase3: photo.phase3_r2_url ? {
+                        url: photo.phase3_r2_url,
+                        completed: true
+                    } : null
+                }
+            }), {
+                headers: { 'Content-Type': 'application/json' },
+            });
+
+        } catch (error) {
+            console.error('Status check error:', error);
+            return new Response(JSON.stringify({ error: 'Failed to get status' }), {
                 status: 500,
                 headers: { 'Content-Type': 'application/json' },
             });
