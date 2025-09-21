@@ -1,5 +1,11 @@
 import { WorkflowEntrypoint } from 'cloudflare:workers';
 
+interface Env {
+  repl_demo_2025_d1: D1Database;
+  R2: R2Bucket;
+  REPLICATE_API_KEY: string;
+}
+
 interface PhotoProcessingInput {
   photoId: number;
 }
@@ -31,18 +37,37 @@ interface ReplicatePrediction {
   error?: string;
 }
 
-class PhotoProcessingWorkflow extends WorkflowEntrypoint {
+class PhotoProcessingWorkflow extends WorkflowEntrypoint<Env, PhotoProcessingInput> {
   async run(event: any, step: any): Promise<void> {
-    const { params } = event;
-    const { photoId } = params as PhotoProcessingInput;
-    const env = step.env;
+    // Extract photoId from the payload
+    const { payload } = event;
     
+    if (!payload) {
+      const error = 'Workflow event payload is undefined';
+      console.error(error);
+      throw new Error(error);
+    }
+    
+    const { photoId } = payload as PhotoProcessingInput;
+    
+    if (!photoId) {
+      const error = 'photoId is required but not provided in workflow payload';
+      console.error(error);
+      throw new Error(error);
+    }
+    
+    if (!this.env.REPLICATE_API_KEY) {
+      const error = 'REPLICATE_API_KEY is required but not provided in environment';
+      console.error(error);
+      throw new Error(error);
+    }
+            
     console.log(`Starting photo processing workflow for photo ID: ${photoId}`);
     
-    try {
+    try {   
       // Fetch photo from database
       console.log(`Fetching photo ${photoId} from database...`);
-      const photo = await this.fetchPhoto(photoId, env);
+      const photo = await this.fetchPhoto(photoId);
       if (!photo) {
         const error = `Photo with ID ${photoId} not found`;
         console.error(error);
@@ -52,15 +77,15 @@ class PhotoProcessingWorkflow extends WorkflowEntrypoint {
 
       // Phase 1: flux-kontext-pro
       console.log(`Starting Phase 1 for photo ${photoId}`);
-      await this.processPhase1(photo, env);
+      await this.processPhase1(photo);
       
       // Phase 2: advanced-face-swap
       console.log(`Starting Phase 2 for photo ${photoId}`);
-      await this.processPhase2(photo, env);
+      await this.processPhase2(photo);
       
       // Phase 3: hailuo-02-fast
       console.log(`Starting Phase 3 for photo ${photoId}`);
-      await this.processPhase3(photo, env);
+      await this.processPhase3(photo);
       
       console.log(`Photo processing workflow completed successfully for photo ${photoId}`);
       
@@ -75,25 +100,25 @@ class PhotoProcessingWorkflow extends WorkflowEntrypoint {
     }
   }
 
-  private async fetchPhoto(photoId: number, env: any): Promise<Photo | null> {
-    const result = await env.repl_demo_2025_d1.prepare(
+  private async fetchPhoto(photoId: number): Promise<Photo | null> {
+    const result = await this.env.repl_demo_2025_d1.prepare(
       'SELECT * FROM Photos WHERE id = ?'
     ).bind(photoId).first();
     
     return result as Photo | null;
   }
 
-  private async updatePhoto(photoId: number, updates: Partial<Photo>, env: any): Promise<void> {
+  private async updatePhoto(photoId: number, updates: Partial<Photo>): Promise<void> {
     const updateFields = Object.keys(updates).map(key => `${key} = ?`).join(', ');
     const values = Object.values(updates);
     values.push(photoId);
     
-    await env.repl_demo_2025_d1.prepare(
+    await this.env.repl_demo_2025_d1.prepare(
       `UPDATE Photos SET ${updateFields}, update_timestamp = datetime("now") WHERE id = ?`
     ).bind(...values).run();
   }
 
-  private async processPhase1(photo: Photo, env: any): Promise<void> {
+  private async processPhase1(photo: Photo): Promise<void> {
     console.log(`Starting Phase 1 for photo ${photo.id}`);
     
     // Call flux-kontext-pro model
@@ -103,17 +128,17 @@ class PhotoProcessingWorkflow extends WorkflowEntrypoint {
         prompt: "Make me a wizard, Harry! Put me in front of a neutral, dark background.",
         input_image: photo.original_r2_url
       },
-      env
+      this.env.REPLICATE_API_KEY
     );
 
     // Update database with prediction
     await this.updatePhoto(photo.id, {
       phase1_replicate_prediction: prediction.id,
       phase1_replicate_url: prediction.urls?.get
-    }, env);
+    });
 
     // Poll until completion
-    const completedPrediction = await this.pollReplicatePrediction(prediction.id, env);
+    const completedPrediction = await this.pollReplicatePrediction(prediction.id, this.env.REPLICATE_API_KEY);
     
     if (completedPrediction.status !== 'succeeded') {
       throw new Error(`Phase 1 failed: ${completedPrediction.error || 'Unknown error'}`);
@@ -129,18 +154,18 @@ class PhotoProcessingWorkflow extends WorkflowEntrypoint {
     const r2ObjectPath = `phase1/${photo.id}.${fileExtension}`;
     const r2Url = `https://photos.demo.xianwen.dev/${r2ObjectPath}`;
 
-    await this.downloadAndStoreInR2(resultUrl, r2ObjectPath, env);
+    await this.downloadAndStoreInR2(resultUrl, r2ObjectPath);
 
     // Update database with R2 info
     await this.updatePhoto(photo.id, {
       phase1_r2_object_path: r2ObjectPath,
       phase1_r2_url: r2Url
-    }, env);
+    });
 
     console.log(`Phase 1 completed for photo ${photo.id}`);
   }
 
-  private async processPhase2(photo: Photo, env: any): Promise<void> {
+  private async processPhase2(photo: Photo): Promise<void> {
     console.log(`Starting Phase 2 for photo ${photo.id}`);
     
     if (!photo.phase1_r2_url) {
@@ -155,17 +180,17 @@ class PhotoProcessingWorkflow extends WorkflowEntrypoint {
         swap_image: photo.original_r2_url,
         upscale: false
       },
-      env
+      this.env.REPLICATE_API_KEY
     );
 
     // Update database with prediction
     await this.updatePhoto(photo.id, {
       phase2_replicate_prediction: prediction.id,
       phase2_replicate_url: prediction.urls?.get
-    }, env);
+    });
 
     // Poll until completion
-    const completedPrediction = await this.pollReplicatePrediction(prediction.id, env);
+    const completedPrediction = await this.pollReplicatePrediction(prediction.id, this.env.REPLICATE_API_KEY);
     
     if (completedPrediction.status !== 'succeeded') {
       throw new Error(`Phase 2 failed: ${completedPrediction.error || 'Unknown error'}`);
@@ -181,18 +206,18 @@ class PhotoProcessingWorkflow extends WorkflowEntrypoint {
     const r2ObjectPath = `phase2/${photo.id}.${fileExtension}`;
     const r2Url = `https://photos.demo.xianwen.dev/${r2ObjectPath}`;
 
-    await this.downloadAndStoreInR2(resultUrl, r2ObjectPath, env);
+    await this.downloadAndStoreInR2(resultUrl, r2ObjectPath);
 
     // Update database with R2 info
     await this.updatePhoto(photo.id, {
       phase2_r2_object_path: r2ObjectPath,
       phase2_r2_url: r2Url
-    }, env);
+    });
 
     console.log(`Phase 2 completed for photo ${photo.id}`);
   }
 
-  private async processPhase3(photo: Photo, env: any): Promise<void> {
+  private async processPhase3(photo: Photo): Promise<void> {
     console.log(`Starting Phase 3 for photo ${photo.id}`);
     
     if (!photo.phase2_r2_url) {
@@ -207,17 +232,17 @@ class PhotoProcessingWorkflow extends WorkflowEntrypoint {
         first_frame_image: photo.phase2_r2_url,
         go_fast: true
       },
-      env
+      this.env.REPLICATE_API_KEY
     );
 
     // Update database with prediction
     await this.updatePhoto(photo.id, {
       phase3_replicate_prediction: prediction.id,
       phase3_replicate_url: prediction.urls?.get
-    }, env);
+    });
 
     // Poll until completion
-    const completedPrediction = await this.pollReplicatePrediction(prediction.id, env);
+    const completedPrediction = await this.pollReplicatePrediction(prediction.id, this.env.REPLICATE_API_KEY);
     
     if (completedPrediction.status !== 'succeeded') {
       throw new Error(`Phase 3 failed: ${completedPrediction.error || 'Unknown error'}`);
@@ -233,23 +258,23 @@ class PhotoProcessingWorkflow extends WorkflowEntrypoint {
     const r2ObjectPath = `phase3/${photo.id}.${fileExtension}`;
     const r2Url = `https://photos.demo.xianwen.dev/${r2ObjectPath}`;
 
-    await this.downloadAndStoreInR2(resultUrl, r2ObjectPath, env);
+    await this.downloadAndStoreInR2(resultUrl, r2ObjectPath);
 
     // Update database with R2 info
     await this.updatePhoto(photo.id, {
       phase3_r2_object_path: r2ObjectPath,
       phase3_r2_url: r2Url
-    }, env);
+    });
 
     console.log(`Phase 3 completed for photo ${photo.id}`);
   }
 
-  private async callReplicateModel(model: string, input: any, env: any): Promise<ReplicatePrediction> {
+  private async callReplicateModel(model: string, input: any, replicateApiKey: string): Promise<ReplicatePrediction> {
     console.log(`Calling Replicate model: ${model}`);
     console.log(`Input:`, JSON.stringify(input, null, 2));
     
-    if (!env.REPLICATE_API_KEY) {
-      const error = 'REPLICATE_API_KEY environment variable is not set';
+    if (!replicateApiKey) {
+      const error = 'replicateApiKey is required but not provided';
       console.error(error);
       throw new Error(error);
     }
@@ -258,7 +283,7 @@ class PhotoProcessingWorkflow extends WorkflowEntrypoint {
       const response = await fetch('https://api.replicate.com/v1/predictions', {
         method: 'POST',
         headers: {
-          'Authorization': `Token ${env.REPLICATE_API_KEY}`,
+          'Authorization': `Token ${replicateApiKey}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
@@ -284,7 +309,7 @@ class PhotoProcessingWorkflow extends WorkflowEntrypoint {
     }
   }
 
-  private async pollReplicatePrediction(predictionId: string, env: any): Promise<ReplicatePrediction> {
+  private async pollReplicatePrediction(predictionId: string, replicateApiKey: string): Promise<ReplicatePrediction> {
     const maxAttempts = 60; // 5 minutes with 5-second intervals
     let attempts = 0;
 
@@ -296,7 +321,7 @@ class PhotoProcessingWorkflow extends WorkflowEntrypoint {
         
         const response = await fetch(`https://api.replicate.com/v1/predictions/${predictionId}`, {
           headers: {
-            'Authorization': `Token ${env.REPLICATE_API_KEY}`,
+            'Authorization': `Token ${replicateApiKey}`,
           },
         });
 
@@ -338,7 +363,7 @@ class PhotoProcessingWorkflow extends WorkflowEntrypoint {
     throw new Error(error);
   }
 
-  private async downloadAndStoreInR2(url: string, objectPath: string, env: any): Promise<void> {
+  private async downloadAndStoreInR2(url: string, objectPath: string): Promise<void> {
     console.log(`Downloading file from ${url} to R2 path: ${objectPath}`);
     
     try {
@@ -355,7 +380,7 @@ class PhotoProcessingWorkflow extends WorkflowEntrypoint {
       const arrayBuffer = await response.arrayBuffer();
       console.log(`Downloaded ${arrayBuffer.byteLength} bytes, uploading to R2...`);
       
-      await env.R2.put(objectPath, arrayBuffer, {
+      await this.env.R2.put(objectPath, arrayBuffer, {
         httpMetadata: {
           contentType: contentType,
         },
