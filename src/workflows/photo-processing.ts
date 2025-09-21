@@ -87,15 +87,18 @@ class PhotoProcessingWorkflow extends WorkflowEntrypoint<Env, PhotoProcessingInp
 
       // Phase 1: flux-kontext-pro
       console.log(`Starting Phase 1 for photo ${photoId}`);
-      await this.processPhase1(photo);
+      const phase1Updates = await this.processPhase1(photo);
+      Object.assign(photo, phase1Updates);
       
       // Phase 2: advanced-face-swap
       console.log(`Starting Phase 2 for photo ${photoId}`);
-      await this.processPhase2(photo);
+      const phase2Updates = await this.processPhase2(photo);
+      Object.assign(photo, phase2Updates);
       
       // Phase 3: hailuo-02-fast
       console.log(`Starting Phase 3 for photo ${photoId}`);
-      await this.processPhase3(photo);
+      const phase3Updates = await this.processPhase3(photo);
+      Object.assign(photo, phase3Updates);
       
       console.log(`Photo processing workflow completed successfully for photo ${photoId}`);
       
@@ -128,7 +131,7 @@ class PhotoProcessingWorkflow extends WorkflowEntrypoint<Env, PhotoProcessingInp
     ).bind(...values).run();
   }
 
-  private async processPhase1(photo: Photo): Promise<void> {
+  private async processPhase1(photo: Photo): Promise<Partial<Photo>> {
     console.log(`Starting Phase 1 for photo ${photo.id}`);
     
     // Call flux-kontext-pro model
@@ -159,22 +162,30 @@ class PhotoProcessingWorkflow extends WorkflowEntrypoint<Env, PhotoProcessingInp
       throw new Error('Phase 1 completed but no result URL found');
     }
 
-    const fileExtension = this.getFileExtension(resultUrl);
+    // Get the actual result URL and file extension
+    const actualResultUrl = await this.getActualResultUrl(resultUrl);
+    const fileExtension = this.getFileExtension(actualResultUrl);
     const r2ObjectPath = `phase1/${photo.id}.${fileExtension}`;
     const r2Url = `https://photos.demo.xianwen.dev/${r2ObjectPath}`;
 
     await this.downloadAndStoreInR2(resultUrl, r2ObjectPath);
 
-    // Update database with R2 info
-    await this.updatePhoto(photo.id, {
+    // Update database with R2 info and actual result URL
+    const phase1Updates = {
+      phase1_replicate_prediction: prediction.id,
+      phase1_replicate_url: actualResultUrl,
       phase1_r2_object_path: r2ObjectPath,
       phase1_r2_url: r2Url
-    });
+    };
+    await this.updatePhoto(photo.id, phase1Updates);
 
     console.log(`Phase 1 completed for photo ${photo.id}`);
+    
+    // Return the updated fields so they can be patched into the photo object
+    return phase1Updates;
   }
 
-  private async processPhase2(photo: Photo): Promise<void> {
+  private async processPhase2(photo: Photo): Promise<Partial<Photo>> {
     console.log(`Starting Phase 2 for photo ${photo.id}`);
     
     if (!photo.phase1_r2_url) {
@@ -210,22 +221,30 @@ class PhotoProcessingWorkflow extends WorkflowEntrypoint<Env, PhotoProcessingInp
       throw new Error('Phase 2 completed but no result URL found');
     }
 
-    const fileExtension = this.getFileExtension(resultUrl);
+    // Get the actual result URL and file extension
+    const actualResultUrl = await this.getActualResultUrl(resultUrl);
+    const fileExtension = this.getFileExtension(actualResultUrl);
     const r2ObjectPath = `phase2/${photo.id}.${fileExtension}`;
     const r2Url = `https://photos.demo.xianwen.dev/${r2ObjectPath}`;
 
     await this.downloadAndStoreInR2(resultUrl, r2ObjectPath);
 
-    // Update database with R2 info
-    await this.updatePhoto(photo.id, {
+    // Update database with R2 info and actual result URL
+    const phase2Updates = {
+      phase2_replicate_prediction: prediction.id,
+      phase2_replicate_url: actualResultUrl,
       phase2_r2_object_path: r2ObjectPath,
       phase2_r2_url: r2Url
-    });
+    };
+    await this.updatePhoto(photo.id, phase2Updates);
 
     console.log(`Phase 2 completed for photo ${photo.id}`);
+    
+    // Return the updated fields so they can be patched into the photo object
+    return phase2Updates;
   }
 
-  private async processPhase3(photo: Photo): Promise<void> {
+  private async processPhase3(photo: Photo): Promise<Partial<Photo>> {
     console.log(`Starting Phase 3 for photo ${photo.id}`);
     
     if (!photo.phase2_r2_url) {
@@ -261,19 +280,27 @@ class PhotoProcessingWorkflow extends WorkflowEntrypoint<Env, PhotoProcessingInp
       throw new Error('Phase 3 completed but no result URL found');
     }
 
-    const fileExtension = this.getFileExtension(resultUrl);
+    // Get the actual result URL and file extension
+    const actualResultUrl = await this.getActualResultUrl(resultUrl);
+    const fileExtension = this.getFileExtension(actualResultUrl);
     const r2ObjectPath = `phase3/${photo.id}.${fileExtension}`;
     const r2Url = `https://photos.demo.xianwen.dev/${r2ObjectPath}`;
 
     await this.downloadAndStoreInR2(resultUrl, r2ObjectPath);
 
-    // Update database with R2 info
-    await this.updatePhoto(photo.id, {
+    // Update database with R2 info and actual result URL
+    const phase3Updates = {
+      phase3_replicate_prediction: prediction.id,
+      phase3_replicate_url: actualResultUrl,
       phase3_r2_object_path: r2ObjectPath,
       phase3_r2_url: r2Url
-    });
+    };
+    await this.updatePhoto(photo.id, phase3Updates);
 
     console.log(`Phase 3 completed for photo ${photo.id}`);
+    
+    // Return the updated fields so they can be patched into the photo object
+    return phase3Updates;
   }
 
   private async callReplicateModel(model: string, input: any): Promise<ReplicatePrediction> {
@@ -339,17 +366,41 @@ class PhotoProcessingWorkflow extends WorkflowEntrypoint<Env, PhotoProcessingInp
     console.log(`Downloading file from ${url} to R2 path: ${objectPath}`);
     
     try {
-      const response = await fetch(url);
-      if (!response.ok) {
-        const error = `Failed to download file from ${url}: ${response.status} ${response.statusText}`;
+      // First, fetch the JSON response from the urls.get endpoint
+      const jsonResponse = await fetch(url, {
+        headers: {
+          'Authorization': `Token ${this.env.REPLICATE_API_KEY}`,
+        },
+      });
+      if (!jsonResponse.ok) {
+        const error = `Failed to fetch prediction details from ${url}: ${jsonResponse.status} ${jsonResponse.statusText}`;
         console.error(error);
         throw new Error(error);
       }
 
-      const contentType = response.headers.get('content-type') || 'application/octet-stream';
-      console.log(`Downloaded file, content-type: ${contentType}, size: ${response.headers.get('content-length') || 'unknown'} bytes`);
+      const predictionData = await jsonResponse.json() as any;
+      console.log(`Fetched prediction data:`, JSON.stringify(predictionData, null, 2));
 
-      const arrayBuffer = await response.arrayBuffer();
+      // Extract the actual result URL from the output field
+      const actualResultUrl = predictionData.output;
+      if (!actualResultUrl) {
+        throw new Error('No output URL found in prediction data');
+      }
+
+      console.log(`Actual result URL: ${actualResultUrl}`);
+
+      // Now download the actual file from the result URL
+      const fileResponse = await fetch(actualResultUrl);
+      if (!fileResponse.ok) {
+        const error = `Failed to download file from ${actualResultUrl}: ${fileResponse.status} ${fileResponse.statusText}`;
+        console.error(error);
+        throw new Error(error);
+      }
+
+      const contentType = fileResponse.headers.get('content-type') || 'application/octet-stream';
+      console.log(`Downloaded file, content-type: ${contentType}, size: ${fileResponse.headers.get('content-length') || 'unknown'} bytes`);
+
+      const arrayBuffer = await fileResponse.arrayBuffer();
       console.log(`Downloaded ${arrayBuffer.byteLength} bytes, uploading to R2...`);
       
       await this.env.R2.put(objectPath, arrayBuffer, {
@@ -363,6 +414,33 @@ class PhotoProcessingWorkflow extends WorkflowEntrypoint<Env, PhotoProcessingInp
       console.error(`Failed to download and store file from ${url} to ${objectPath}:`, error);
       throw error;
     }
+  }
+
+  private async getActualResultUrl(urlsGetUrl: string): Promise<string> {
+    console.log(`Fetching actual result URL from: ${urlsGetUrl}`);
+    
+    const response = await fetch(urlsGetUrl, {
+      headers: {
+        'Authorization': `Token ${this.env.REPLICATE_API_KEY}`,
+      },
+    });
+    
+    if (!response.ok) {
+      const error = `Failed to fetch prediction details from ${urlsGetUrl}: ${response.status} ${response.statusText}`;
+      console.error(error);
+      throw new Error(error);
+    }
+
+    const predictionData = await response.json() as any;
+    console.log(`Fetched prediction data:`, JSON.stringify(predictionData, null, 2));
+
+    const actualResultUrl = predictionData.output;
+    if (!actualResultUrl) {
+      throw new Error('No output URL found in prediction data');
+    }
+
+    console.log(`Actual result URL: ${actualResultUrl}`);
+    return actualResultUrl;
   }
 
   private getFileExtension(url: string): string {

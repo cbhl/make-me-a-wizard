@@ -406,10 +406,14 @@ export default function Admin() {
                     button.textContent = 'Processing... (' + status.progress + '%)';
                     // Continue polling
                     setTimeout(() => pollPhotoStatus(photoId), 2000);
+                  } else if (status.status === 'pending') {
+                    button.textContent = 'Starting...';
+                    // Continue polling for pending status
+                    setTimeout(() => pollPhotoStatus(photoId), 2000);
                   } else {
                     button.textContent = 'Process';
                     button.disabled = false;
-                    showStatus('Processing failed or pending', 'error');
+                    showStatus('Processing failed', 'error');
                   }
                 } else {
                   button.textContent = 'Process';
