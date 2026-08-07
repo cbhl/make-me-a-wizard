@@ -128,7 +128,8 @@ export default function Main() {
               box-shadow: 0 10px 30px rgba(255, 255, 255, 0.1);
             }
             
-            .video-item video {
+            .video-item video,
+            .video-item img {
               width: 100%;
               height: auto;
               display: block;
@@ -211,18 +212,29 @@ export default function Main() {
                   const videoItem = document.createElement('div');
                   videoItem.className = 'video-item';
                   
-                  const videoElement = document.createElement('video');
-                  videoElement.src = video.phase3_r2_url;
-                  videoElement.controls = true;
-                  videoElement.muted = true;
-                  videoElement.loop = true;
-                  videoElement.autoplay = true;
+                  let mediaElement;
+                  if (video.phase3_r2_url) {
+                    // Use video element for phase3_r2_url
+                    mediaElement = document.createElement('video');
+                    mediaElement.src = video.phase3_r2_url;
+                    mediaElement.controls = true;
+                    mediaElement.muted = true;
+                    mediaElement.loop = true;
+                    mediaElement.autoplay = true;
+                  } else if (video.phase2_r2_url) {
+                    // Use image element for phase2_r2_url
+                    mediaElement = document.createElement('img');
+                    mediaElement.src = video.phase2_r2_url;
+                    mediaElement.alt = 'Processed photo';
+                  }
                   
                   const meta = document.createElement('div');
                   meta.className = 'video-meta';
                   meta.textContent = 'ID: ' + video.id + ' • Created: ' + new Date(video.create_timestamp).toLocaleDateString();
                   
-                  videoItem.appendChild(videoElement);
+                  if (mediaElement) {
+                    videoItem.appendChild(mediaElement);
+                  }
                   videoItem.appendChild(meta);
                   videoGrid.appendChild(videoItem);
                 });

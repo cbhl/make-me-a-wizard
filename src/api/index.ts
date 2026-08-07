@@ -31,11 +31,11 @@ async function HandleApiRequest(request: Request, env: any): Promise<Response> {
 
     if (url.pathname === '/api/browse') {
         if (request.method === 'GET') {
-            // Query photos with phase3_r2_url not null, is_public = true, is_moderated = false
+            // Query photos with either phase3_r2_url or phase2_r2_url not null, is_public = true, is_moderated = false
             const photos = await env.repl_demo_2025_d1.prepare(`
-                SELECT id, phase3_r2_url, create_timestamp, update_timestamp, publish_timestamp 
+                SELECT id, phase2_r2_url, phase3_r2_url, create_timestamp, update_timestamp, publish_timestamp 
                 FROM Photos 
-                WHERE phase3_r2_url IS NOT NULL 
+                WHERE (phase3_r2_url IS NOT NULL OR phase2_r2_url IS NOT NULL)
                 AND is_public = 1 
                 AND is_moderated = 0 
                 ORDER BY create_timestamp DESC
