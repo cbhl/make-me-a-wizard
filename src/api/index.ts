@@ -69,6 +69,24 @@ async function HandleApiRequest(request: Request, env: any): Promise<Response> {
         return new Response('Method Not Allowed', { status: 405 });
     }
 
+    if (url.pathname === '/api/resolve-model-versions' && request.method === 'GET') {
+        const models = [
+            'bytedance/seedream-5-lite',
+            'cdingram/face-swap',
+            'pikachupichu25/image-faceswap'
+        ];
+        const versions = await Promise.all(models.map(async model => {
+            const response = await fetch(`https://api.replicate.com/v1/models/${model}`, {
+                headers: { 'Authorization': `Bearer ${env.REPLICATE_API_KEY}` }
+            });
+            const data = await response.json() as { latest_version?: { id?: string } };
+            return { model, status: response.status, version: data.latest_version?.id || null };
+        }));
+        return new Response(JSON.stringify(versions), {
+            headers: { 'Content-Type': 'application/json' }
+        });
+    }
+
     if (url.pathname.startsWith('/api/photos/') && request.method === 'PATCH') {
         // Update photo
         const photoId = url.pathname.split('/')[3];
