@@ -14,13 +14,8 @@ interface PhotoProcessingInput {
 }
 
 type ComparisonModel =
-  | 'fofr/face-swap-with-ideogram'
-  | 'codeplugtech/face-swap'
-  | 'catio-apps/cog-faceswap-catio'
-  | 'naimish-gami/face-swapper'
-  | 'flux-kontext-apps/multi-image-kontext-pro'
+  | 'bytedance/seedream-5-lite'
   | 'cdingram/face-swap'
-  | 'ddvinh1/face-swap-gpu'
   | 'pikachupichu25/image-faceswap';
 
 interface Photo {
@@ -266,34 +261,17 @@ class PhotoProcessingWorkflow extends WorkflowEntrypoint<Env, PhotoProcessingInp
       throw new Error('Phase 1 result is required for a face-swap comparison');
     }
 
-    const input = model === 'fofr/face-swap-with-ideogram'
+    const input = model === 'bytedance/seedream-5-lite'
       ? {
-          character_image: photo.original_r2_url,
-          target_image: photo.phase1_r2_url,
-          cleanup: false
-        }
-      : model === 'flux-kontext-apps/multi-image-kontext-pro'
-      ? {
-          prompt: 'Transfer the person identity from the first image onto the person in the second image. Preserve the second image composition, clothing, wizard costume, lighting, and background.',
-          input_image_1: photo.original_r2_url,
-          input_image_2: photo.phase1_r2_url,
+          prompt: 'Put me in the second image',
+          image_input: [photo.original_r2_url, photo.phase1_r2_url],
+          size: '2K',
           output_format: 'png',
-          aspect_ratio: 'match_input_image',
-          safety_tolerance: 2
-        }
-      : model === 'catio-apps/cog-faceswap-catio'
-      ? {
-          target_image: photo.phase1_r2_url,
-          source_image: photo.original_r2_url,
-          enable_face_swap: true,
-          enhance_face: true,
-          use_advanced_blending: true,
-          output_format: 'png'
+          aspect_ratio: 'match_input_image'
         }
       : {
           input_image: photo.phase1_r2_url,
           swap_image: photo.original_r2_url,
-          ...(model === 'naimish-gami/face-swapper' ? { enhance: true } : {}),
           ...(model === 'pikachupichu25/image-faceswap' ? {
             output_format: 'png',
             output_quality: 100
