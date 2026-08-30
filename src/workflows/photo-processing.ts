@@ -270,12 +270,15 @@ class PhotoProcessingWorkflow extends WorkflowEntrypoint<Env, PhotoProcessingInp
           aspect_ratio: 'match_input_image'
         }
       : {
-          input_image: photo.phase1_r2_url,
-          swap_image: photo.original_r2_url,
           ...(model === 'pikachupichu25/image-faceswap' ? {
+            target_image: photo.phase1_r2_url,
+            swap_image: photo.original_r2_url,
             output_format: 'png',
             output_quality: 100
-          } : {})
+          } : {
+            input_image: photo.phase1_r2_url,
+            swap_image: photo.original_r2_url
+          })
         };
 
     await this.env.repl_demo_2025_d1.prepare(`
