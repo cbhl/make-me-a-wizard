@@ -21,6 +21,10 @@ bucket_name = "repl-demo-2025"
 pattern = "demo.xianwen.dev"
 custom_domain = true
 
+[[routes]]
+pattern = "wizard.xianwen.dev"
+custom_domain = true
+
 [[workflows]]
 name = "photo-processing"
 binding = "PHOTO_PROCESSING_WORKFLOW"
