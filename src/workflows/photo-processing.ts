@@ -404,10 +404,18 @@ class PhotoProcessingWorkflow extends WorkflowEntrypoint<Env, PhotoProcessingInp
     console.log(`Input:`, JSON.stringify(input, null, 2));
     
     try {
-      const prediction = await this.replicate.predictions.create({
-        model: model,
-        input: input
+      const response = await fetch('https://api.replicate.com/v1/predictions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${this.env.REPLICATE_API_KEY}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ model, input })
       });
+      const prediction = await response.json() as ReplicatePrediction & { detail?: string };
+      if (!response.ok) {
+        throw new Error(`Replicate API returned ${response.status}: ${prediction.error || prediction.detail || 'Unknown error'}`);
+      }
 
       console.log(`Replicate API call successful for model ${model}, prediction ID: ${prediction.id}`);
       return prediction as ReplicatePrediction;
