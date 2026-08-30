@@ -94,9 +94,13 @@ class PhotoProcessingWorkflow extends WorkflowEntrypoint<Env, PhotoProcessingInp
       console.log(`Photo found: ${photo.original_r2_url}`);
 
       // Phase 1: flux-kontext-pro
-      console.log(`Starting Phase 1 for photo ${photoId}`);
-      const phase1Updates = await this.processPhase1(photo);
-      Object.assign(photo, phase1Updates);
+      if (await this.hasStoredPhase1Result(photo)) {
+        console.log(`Skipping Phase 1 for photo ${photoId}; a non-empty R2 result exists`);
+      } else {
+        console.log(`Starting Phase 1 for photo ${photoId}`);
+        const phase1Updates = await this.processPhase1(photo);
+        Object.assign(photo, phase1Updates);
+      }
       
       // Phase 2: load-balance the two equivalent face-swap models by photo ID.
       console.log(`Starting Phase 2 for photo ${photoId}`);
@@ -137,6 +141,14 @@ class PhotoProcessingWorkflow extends WorkflowEntrypoint<Env, PhotoProcessingInp
     await this.env.repl_demo_2025_d1.prepare(
       `UPDATE Photos SET ${updateFields}, update_timestamp = datetime("now") WHERE id = ?`
     ).bind(...values).run();
+  }
+
+  private async hasStoredPhase1Result(photo: Photo): Promise<boolean> {
+    if (!photo.phase1_r2_object_path) {
+      return false;
+    }
+    const object = await this.env.R2.head(photo.phase1_r2_object_path);
+    return object !== null && object.size > 0;
   }
 
   private async processPhase1(photo: Photo): Promise<Partial<Photo>> {
