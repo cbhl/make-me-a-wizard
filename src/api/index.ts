@@ -74,7 +74,7 @@ async function HandleApiRequest(request: Request, env: any): Promise<Response> {
         const comparisons = await env.repl_demo_2025_d1.prepare(`
             SELECT id, prediction
             FROM PhotoFaceSwapComparisons
-            WHERE model = ? AND status = 'processing' AND prediction IS NOT NULL
+            WHERE model = ? AND r2_url IS NULL AND prediction IS NOT NULL
         `).bind(model).all();
         const results = [];
         for (const comparison of comparisons.results as Array<{ id: number; prediction: string }>) {
