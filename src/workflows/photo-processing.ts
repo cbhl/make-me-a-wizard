@@ -404,15 +404,35 @@ class PhotoProcessingWorkflow extends WorkflowEntrypoint<Env, PhotoProcessingInp
     console.log(`Input:`, JSON.stringify(input, null, 2));
     
     try {
-      const response = await fetch('https://api.replicate.com/v1/predictions', {
+      const headers = {
+        'Authorization': `Bearer ${this.env.REPLICATE_API_KEY}`,
+        'Content-Type': 'application/json'
+      };
+      let response = await fetch('https://api.replicate.com/v1/predictions', {
         method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${this.env.REPLICATE_API_KEY}`,
-          'Content-Type': 'application/json'
-        },
+        headers,
         body: JSON.stringify({ model, input })
       });
-      const prediction = await response.json() as ReplicatePrediction & { detail?: string };
+      let prediction = await response.json() as ReplicatePrediction & { detail?: string };
+      if (response.status === 422 && prediction.detail?.includes('version is required')) {
+        const modelResponse = await fetch(`https://api.replicate.com/v1/models/${model}`, {
+          headers
+        });
+        const modelData = await modelResponse.json() as {
+          latest_version?: { id?: string };
+          detail?: string;
+        };
+        const version = modelData.latest_version?.id;
+        if (!modelResponse.ok || !version) {
+          throw new Error(`Unable to resolve latest version for ${model}: ${modelData.detail || modelResponse.status}`);
+        }
+        response = await fetch('https://api.replicate.com/v1/predictions', {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({ version, input })
+        });
+        prediction = await response.json() as ReplicatePrediction & { detail?: string };
+      }
       if (!response.ok) {
         throw new Error(`Replicate API returned ${response.status}: ${prediction.error || prediction.detail || 'Unknown error'}`);
       }
