@@ -161,7 +161,7 @@ async function HandleApiRequest(request: Request, env: any): Promise<Response> {
             }
             
             // Generate public URL (assuming custom domain or public bucket)
-            const r2Url = `https://photos.demo.xianwen.dev/${objectKey}`;
+            const r2Url = `https://photos.wizard.xianwen.dev/${objectKey}`;
             console.log(`Generated R2 URL: ${r2Url}`);
             
             // Insert into database

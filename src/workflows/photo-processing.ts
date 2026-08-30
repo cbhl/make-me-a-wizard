@@ -166,7 +166,7 @@ class PhotoProcessingWorkflow extends WorkflowEntrypoint<Env, PhotoProcessingInp
     const actualResultUrl = await this.getActualResultUrl(resultUrl);
     const fileExtension = this.getFileExtension(actualResultUrl);
     const r2ObjectPath = `phase1/${photo.id}.${fileExtension}`;
-    const r2Url = `https://photos.demo.xianwen.dev/${r2ObjectPath}`;
+    const r2Url = `https://photos.wizard.xianwen.dev/${r2ObjectPath}`;
 
     await this.downloadAndStoreInR2(resultUrl, r2ObjectPath);
 
@@ -225,7 +225,7 @@ class PhotoProcessingWorkflow extends WorkflowEntrypoint<Env, PhotoProcessingInp
     const actualResultUrl = await this.getActualResultUrl(resultUrl);
     const fileExtension = this.getFileExtension(actualResultUrl);
     const r2ObjectPath = `phase2/${photo.id}.${fileExtension}`;
-    const r2Url = `https://photos.demo.xianwen.dev/${r2ObjectPath}`;
+    const r2Url = `https://photos.wizard.xianwen.dev/${r2ObjectPath}`;
 
     await this.downloadAndStoreInR2(resultUrl, r2ObjectPath);
 
@@ -284,7 +284,7 @@ class PhotoProcessingWorkflow extends WorkflowEntrypoint<Env, PhotoProcessingInp
     const actualResultUrl = await this.getActualResultUrl(resultUrl);
     const fileExtension = this.getFileExtension(actualResultUrl);
     const r2ObjectPath = `phase3/${photo.id}.${fileExtension}`;
-    const r2Url = `https://photos.demo.xianwen.dev/${r2ObjectPath}`;
+    const r2Url = `https://photos.wizard.xianwen.dev/${r2ObjectPath}`;
 
     await this.downloadAndStoreInR2(resultUrl, r2ObjectPath);
 

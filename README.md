@@ -38,6 +38,15 @@ npm run deploy
 - `GET /api/demo` - Returns JSON: `{"message": "Hello, World!"}`
 - Any other route returns a 404 Not Found
 
+## Production domains
+
+- The primary application domain is `wizard.xianwen.dev`.
+- New photo uploads and processed photo results use `photos.wizard.xianwen.dev`.
+- `demo.xianwen.dev` remains configured as a legacy application alias in
+  `wrangler.toml`.
+- Existing database records are not migrated; their stored URLs remain
+  unchanged until a later migration.
+
 ## Development
 
 The application uses:
