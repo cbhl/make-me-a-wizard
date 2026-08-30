@@ -9,7 +9,11 @@ interface Env {
 
 interface PhotoProcessingInput {
   photoId: number;
+  comparisonModel?: ComparisonModel;
+  comparison?: boolean;
 }
+
+type ComparisonModel = 'fofr/face-swap-with-ideogram' | 'codeplugtech/face-swap';
 
 interface Photo {
   id: number;
@@ -84,6 +88,11 @@ class PhotoProcessingWorkflow extends WorkflowEntrypoint<Env, PhotoProcessingInp
         throw new Error(error);
       }
       console.log(`Photo found: ${photo.original_r2_url}`);
+
+      if (event.payload.comparison && event.payload.comparisonModel) {
+        await this.processComparison(photo, event.payload.comparisonModel);
+        return;
+      }
 
       // Phase 1: flux-kontext-pro
       console.log(`Starting Phase 1 for photo ${photoId}`);
@@ -242,6 +251,84 @@ class PhotoProcessingWorkflow extends WorkflowEntrypoint<Env, PhotoProcessingInp
     
     // Return the updated fields so they can be patched into the photo object
     return phase2Updates;
+  }
+
+  private async processComparison(photo: Photo, model: ComparisonModel): Promise<void> {
+    if (!photo.phase1_r2_url) {
+      throw new Error('Phase 1 result is required for a face-swap comparison');
+    }
+
+    const input = model === 'fofr/face-swap-with-ideogram'
+      ? {
+          character_image: photo.original_r2_url,
+          target_image: photo.phase1_r2_url,
+          cleanup: false
+        }
+      : {
+          input_image: photo.phase1_r2_url,
+          swap_image: photo.original_r2_url
+        };
+
+    await this.env.repl_demo_2025_d1.prepare(`
+      CREATE TABLE IF NOT EXISTS PhotoFaceSwapComparisons (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        photo_id INTEGER NOT NULL,
+        model TEXT NOT NULL,
+        prediction TEXT,
+        replicate_url TEXT,
+        r2_object_path TEXT,
+        r2_url TEXT,
+        status TEXT NOT NULL,
+        error TEXT,
+        create_timestamp DATETIME NOT NULL,
+        update_timestamp DATETIME NOT NULL
+      )
+    `).run();
+
+    const now = new Date().toISOString();
+    const row = await this.env.repl_demo_2025_d1.prepare(`
+      INSERT INTO PhotoFaceSwapComparisons
+        (photo_id, model, status, create_timestamp, update_timestamp)
+      VALUES (?, ?, 'processing', ?, ?)
+    `).bind(photo.id, model, now, now).run();
+    const comparisonId = row.meta.last_row_id;
+
+    try {
+      const prediction = await this.callReplicateModel(model, input);
+      await this.env.repl_demo_2025_d1.prepare(`
+        UPDATE PhotoFaceSwapComparisons
+        SET prediction = ?, replicate_url = ?, update_timestamp = datetime("now")
+        WHERE id = ?
+      `).bind(prediction.id, prediction.urls?.get || null, comparisonId).run();
+
+      const completed = await this.pollReplicatePrediction(prediction.id);
+      if (completed.status !== 'succeeded') {
+        throw new Error(completed.error || 'Face-swap comparison failed');
+      }
+      const resultUrl = completed.urls?.get;
+      if (!resultUrl) throw new Error('Face-swap comparison returned no result URL');
+
+      const actualResultUrl = await this.getActualResultUrl(resultUrl);
+      const extension = this.getFileExtension(actualResultUrl);
+      const modelSlug = model.replace('/', '-');
+      const objectPath = `comparisons/phase2/${modelSlug}/${photo.id}-${comparisonId}.${extension}`;
+      const r2Url = `https://photos.demo.xianwen.dev/${objectPath}`;
+      await this.downloadAndStoreInR2(resultUrl, objectPath);
+
+      await this.env.repl_demo_2025_d1.prepare(`
+        UPDATE PhotoFaceSwapComparisons
+        SET replicate_url = ?, r2_object_path = ?, r2_url = ?, status = 'completed',
+            update_timestamp = datetime("now")
+        WHERE id = ?
+      `).bind(actualResultUrl, objectPath, r2Url, comparisonId).run();
+    } catch (error) {
+      await this.env.repl_demo_2025_d1.prepare(`
+        UPDATE PhotoFaceSwapComparisons
+        SET status = 'failed', error = ?, update_timestamp = datetime("now")
+        WHERE id = ?
+      `).bind(error instanceof Error ? error.message : 'Unknown error', comparisonId).run();
+      throw error;
+    }
   }
 
   private async processPhase3(photo: Photo): Promise<Partial<Photo>> {

@@ -1,6 +1,11 @@
 import { HandleConfigRequest } from './config';
 import PhotoProcessingWorkflow from '../workflows/photo-processing';
 
+const COMPARISON_MODELS = [
+    'fofr/face-swap-with-ideogram',
+    'codeplugtech/face-swap'
+] as const;
+
 async function HandleApiRequest(request: Request, env: any): Promise<Response> {
     const url = new URL(request.url);
     if (!url.pathname.startsWith('/api/')) {
@@ -227,11 +232,23 @@ async function HandleApiRequest(request: Request, env: any): Promise<Response> {
     if (url.pathname.startsWith('/api/photos/') && url.pathname.endsWith('/process') && request.method === 'POST') {
         // Trigger photo processing workflow
         const photoId = parseInt(url.pathname.split('/')[3]);
+        const comparisonModel = url.searchParams.get('model');
+        const isComparison = comparisonModel !== null;
         
         if (isNaN(photoId)) {
             return new Response(JSON.stringify({ error: 'Invalid photo ID' }), {
                 status: 400,
                 headers: { 'Content-Type': 'application/json' },
+            });
+        }
+
+        if (isComparison && !COMPARISON_MODELS.includes(comparisonModel as typeof COMPARISON_MODELS[number])) {
+            return new Response(JSON.stringify({
+                error: 'Unsupported comparison model',
+                allowedModels: COMPARISON_MODELS
+            }), {
+                status: 400,
+                headers: { 'Content-Type': 'application/json' }
             });
         }
 
@@ -268,7 +285,11 @@ async function HandleApiRequest(request: Request, env: any): Promise<Response> {
             const workflow = env.PHOTO_PROCESSING_WORKFLOW;
             const workflowInstancePromise : Promise<WorkflowInstance> = workflow.create({
                 params: {
-                    photoId: photoId
+                    photoId: photoId,
+                    ...(isComparison ? {
+                        comparison: true,
+                        comparisonModel
+                    } : {})
                 }
             });
 
@@ -291,6 +312,29 @@ async function HandleApiRequest(request: Request, env: any): Promise<Response> {
             }), {
                 status: 500,
                 headers: { 'Content-Type': 'application/json' },
+            });
+        }
+    }
+
+    if (url.pathname.match(/^\/api\/photos\/\d+\/comparisons$/) && request.method === 'GET') {
+        const photoId = parseInt(url.pathname.split('/')[3]);
+        try {
+            const comparisons = await env.repl_demo_2025_d1.prepare(`
+                SELECT id, photo_id, model, prediction, replicate_url, r2_url, status, error,
+                       create_timestamp, update_timestamp
+                FROM PhotoFaceSwapComparisons
+                WHERE photo_id = ?
+                ORDER BY create_timestamp ASC
+            `).bind(photoId).all();
+            return new Response(JSON.stringify(comparisons.results), {
+                headers: { 'Content-Type': 'application/json' }
+            });
+        } catch (error) {
+            return new Response(JSON.stringify({
+                error: 'Comparison results are not available yet'
+            }), {
+                status: 404,
+                headers: { 'Content-Type': 'application/json' }
             });
         }
     }
