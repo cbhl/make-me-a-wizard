@@ -200,12 +200,11 @@ class PhotoProcessingWorkflow extends WorkflowEntrypoint<Env, PhotoProcessingInp
       throw new Error('Phase 1 result not available for Phase 2');
     }
 
-    const primaryModel = photo.id % 2 === 0
-      ? 'cdingram/face-swap'
-      : 'pikachupichu25/image-faceswap';
-    const fallbackModel = primaryModel === 'cdingram/face-swap'
-      ? 'pikachupichu25/image-faceswap'
-      : 'cdingram/face-swap';
+    let primaryModel = 'cdingram/face-swap';
+    let fallbackModel = 'pikachupichu25/image-faceswap';
+    if (photo.id % 2 === 0) {
+      [primaryModel, fallbackModel] = [fallbackModel, primaryModel];
+    }
     try {
       return await this.processPhase2WithModel(photo, primaryModel);
     } catch (primaryError) {
@@ -215,15 +214,23 @@ class PhotoProcessingWorkflow extends WorkflowEntrypoint<Env, PhotoProcessingInp
   }
 
   private async processPhase2WithModel(photo: Photo, model: string): Promise<Partial<Photo>> {
-    const input = model === 'pikachupichu25/image-faceswap'
-      ? {
-          target_image: photo.phase1_r2_url,
-          swap_image: photo.original_r2_url
-        }
-      : {
+    let input: Record<string, string>;
+    switch (model) {
+      case 'cdingram/face-swap':
+        input = {
           input_image: photo.phase1_r2_url,
           swap_image: photo.original_r2_url
         };
+        break;
+      case 'pikachupichu25/image-faceswap':
+        input = {
+          target_image: photo.phase1_r2_url,
+          swap_image: photo.original_r2_url
+        };
+        break;
+      default:
+        throw new Error(`Unsupported Phase 2 model: ${model}`);
+    }
     const prediction = await this.callReplicateModel(model, input);
     await this.updatePhoto(photo.id, {
       phase2_replicate_prediction: prediction.id,
