@@ -21,17 +21,3 @@ CREATE TABLE IF NOT EXISTS Photos (
   is_public BOOLEAN,
   is_moderated BOOLEAN
 );
-
-CREATE TABLE IF NOT EXISTS PhotoFaceSwapComparisons (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  photo_id INTEGER NOT NULL,
-  model TEXT NOT NULL,
-  prediction TEXT,
-  replicate_url TEXT,
-  r2_object_path TEXT,
-  r2_url TEXT,
-  status TEXT NOT NULL,
-  error TEXT,
-  create_timestamp DATETIME NOT NULL,
-  update_timestamp DATETIME NOT NULL
-);

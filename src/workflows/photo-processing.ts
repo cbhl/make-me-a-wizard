@@ -9,20 +9,15 @@ interface Env {
 
 interface PhotoProcessingInput {
   photoId: number;
-  comparisonModel?: ComparisonModel;
-  comparison?: boolean;
 }
 
-type ComparisonModel =
-  | 'bytedance/seedream-5-lite'
-  | 'cdingram/face-swap'
-  | 'pikachupichu25/image-faceswap';
-
-const COMPARISON_MODEL_VERSIONS: Record<ComparisonModel, string> = {
-  'bytedance/seedream-5-lite': 'eeb2857d94c49a5bcbc9d6c6057416e1d3b1a2735a16e08e4def9bf7ee22ec71',
+const FACE_SWAP_MODEL_VERSIONS: Record<string, string> = {
   'cdingram/face-swap': 'd1d6ea8c8be89d664a07a457526f7128109dee7030fdac424788d762c71ed111',
   'pikachupichu25/image-faceswap': '94b109952d4dd3cb6e9947340a6a099cc9a4821af8807a879c1f7af92e2a3b00'
 };
+
+// Tried bytedance/seedream-5-lite with "Put me in the second image";
+// it was slower, more expensive, and produced worse results than face swap.
 
 interface Photo {
   id: number;
@@ -98,17 +93,12 @@ class PhotoProcessingWorkflow extends WorkflowEntrypoint<Env, PhotoProcessingInp
       }
       console.log(`Photo found: ${photo.original_r2_url}`);
 
-      if (event.payload.comparison && event.payload.comparisonModel) {
-        await this.processComparison(photo, event.payload.comparisonModel);
-        return;
-      }
-
       // Phase 1: flux-kontext-pro
       console.log(`Starting Phase 1 for photo ${photoId}`);
       const phase1Updates = await this.processPhase1(photo);
       Object.assign(photo, phase1Updates);
       
-      // Phase 2: advanced-face-swap
+      // Phase 2: load-balance the two equivalent face-swap models by photo ID.
       console.log(`Starting Phase 2 for photo ${photoId}`);
       const phase2Updates = await this.processPhase2(photo);
       Object.assign(photo, phase2Updates);
@@ -210,44 +200,46 @@ class PhotoProcessingWorkflow extends WorkflowEntrypoint<Env, PhotoProcessingInp
       throw new Error('Phase 1 result not available for Phase 2');
     }
 
-    // Call advanced-face-swap model
-    const prediction = await this.callReplicateModel(
-      'easel/advanced-face-swap',
-      {
-        target_image: photo.phase1_r2_url,
-        swap_image: photo.original_r2_url,
-        upscale: false
-      }
-    );
+    const primaryModel = photo.id % 2 === 0
+      ? 'cdingram/face-swap'
+      : 'pikachupichu25/image-faceswap';
+    const fallbackModel = primaryModel === 'cdingram/face-swap'
+      ? 'pikachupichu25/image-faceswap'
+      : 'cdingram/face-swap';
+    try {
+      return await this.processPhase2WithModel(photo, primaryModel);
+    } catch (primaryError) {
+      console.error(`Phase 2 primary model ${primaryModel} failed; trying ${fallbackModel}`, primaryError);
+      return await this.processPhase2WithModel(photo, fallbackModel);
+    }
+  }
 
-    // Update database with prediction
+  private async processPhase2WithModel(photo: Photo, model: string): Promise<Partial<Photo>> {
+    const input = model === 'pikachupichu25/image-faceswap'
+      ? {
+          target_image: photo.phase1_r2_url,
+          swap_image: photo.original_r2_url
+        }
+      : {
+          input_image: photo.phase1_r2_url,
+          swap_image: photo.original_r2_url
+        };
+    const prediction = await this.callReplicateModel(model, input);
     await this.updatePhoto(photo.id, {
       phase2_replicate_prediction: prediction.id,
       phase2_replicate_url: prediction.urls?.get
     });
-
-    // Poll until completion
     const completedPrediction = await this.pollReplicatePrediction(prediction.id);
-    
     if (completedPrediction.status !== 'succeeded') {
-      throw new Error(`Phase 2 failed: ${completedPrediction.error || 'Unknown error'}`);
+      throw new Error(`Phase 2 failed for ${model}: ${completedPrediction.error || 'Unknown error'}`);
     }
-
-    // Download and store result in R2
     const resultUrl = completedPrediction.urls?.get;
-    if (!resultUrl) {
-      throw new Error('Phase 2 completed but no result URL found');
-    }
-
-    // Get the actual result URL and file extension
+    if (!resultUrl) throw new Error(`Phase 2 completed for ${model} but no result URL found`);
     const actualResultUrl = await this.getActualResultUrl(resultUrl);
     const fileExtension = this.getFileExtension(actualResultUrl);
     const r2ObjectPath = `phase2/${photo.id}.${fileExtension}`;
     const r2Url = `https://photos.demo.xianwen.dev/${r2ObjectPath}`;
-
     await this.downloadAndStoreInR2(resultUrl, r2ObjectPath);
-
-    // Update database with R2 info and actual result URL
     const phase2Updates = {
       phase2_replicate_prediction: prediction.id,
       phase2_replicate_url: actualResultUrl,
@@ -255,98 +247,8 @@ class PhotoProcessingWorkflow extends WorkflowEntrypoint<Env, PhotoProcessingInp
       phase2_r2_url: r2Url
     };
     await this.updatePhoto(photo.id, phase2Updates);
-
-    console.log(`Phase 2 completed for photo ${photo.id}`);
-    
-    // Return the updated fields so they can be patched into the photo object
+    console.log(`Phase 2 completed for photo ${photo.id} using ${model}`);
     return phase2Updates;
-  }
-
-  private async processComparison(photo: Photo, model: ComparisonModel): Promise<void> {
-    if (!photo.phase1_r2_url) {
-      throw new Error('Phase 1 result is required for a face-swap comparison');
-    }
-
-    const input = model === 'bytedance/seedream-5-lite'
-      ? {
-          prompt: 'Put me in the second image',
-          image_input: [photo.original_r2_url, photo.phase1_r2_url],
-          size: '2K',
-          output_format: 'png',
-          aspect_ratio: 'match_input_image'
-        }
-      : {
-          ...(model === 'pikachupichu25/image-faceswap' ? {
-            target_image: photo.phase1_r2_url,
-            swap_image: photo.original_r2_url,
-            output_format: 'png',
-            output_quality: 100
-          } : {
-            input_image: photo.phase1_r2_url,
-            swap_image: photo.original_r2_url
-          })
-        };
-
-    await this.env.repl_demo_2025_d1.prepare(`
-      CREATE TABLE IF NOT EXISTS PhotoFaceSwapComparisons (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        photo_id INTEGER NOT NULL,
-        model TEXT NOT NULL,
-        prediction TEXT,
-        replicate_url TEXT,
-        r2_object_path TEXT,
-        r2_url TEXT,
-        status TEXT NOT NULL,
-        error TEXT,
-        create_timestamp DATETIME NOT NULL,
-        update_timestamp DATETIME NOT NULL
-      )
-    `).run();
-
-    const now = new Date().toISOString();
-    const row = await this.env.repl_demo_2025_d1.prepare(`
-      INSERT INTO PhotoFaceSwapComparisons
-        (photo_id, model, status, create_timestamp, update_timestamp)
-      VALUES (?, ?, 'processing', ?, ?)
-    `).bind(photo.id, model, now, now).run();
-    const comparisonId = row.meta.last_row_id;
-
-    try {
-      const prediction = await this.callReplicateModel(model, input);
-      await this.env.repl_demo_2025_d1.prepare(`
-        UPDATE PhotoFaceSwapComparisons
-        SET prediction = ?, replicate_url = ?, update_timestamp = datetime("now")
-        WHERE id = ?
-      `).bind(prediction.id, prediction.urls?.get || null, comparisonId).run();
-
-      const completed = await this.pollReplicatePrediction(prediction.id);
-      if (completed.status !== 'succeeded') {
-        throw new Error(completed.error || 'Face-swap comparison failed');
-      }
-      const resultUrl = completed.urls?.get;
-      if (!resultUrl) throw new Error('Face-swap comparison returned no result URL');
-
-      const actualResultUrl = await this.getActualResultUrl(resultUrl);
-      const extension = this.getFileExtension(actualResultUrl);
-      const modelSlug = model.replace('/', '-');
-      const objectPath = `comparisons/phase2/${modelSlug}/${photo.id}-${comparisonId}.${extension}`;
-      const r2Url = `https://photos.demo.xianwen.dev/${objectPath}`;
-      await this.downloadAndStoreInR2(resultUrl, objectPath);
-
-      await this.env.repl_demo_2025_d1.prepare(`
-        UPDATE PhotoFaceSwapComparisons
-        SET replicate_url = ?, r2_object_path = ?, r2_url = ?, status = 'completed',
-            update_timestamp = datetime("now")
-        WHERE id = ?
-      `).bind(actualResultUrl, objectPath, r2Url, comparisonId).run();
-    } catch (error) {
-      await this.env.repl_demo_2025_d1.prepare(`
-        UPDATE PhotoFaceSwapComparisons
-        SET status = 'failed', error = ?, update_timestamp = datetime("now")
-        WHERE id = ?
-      `).bind(error instanceof Error ? error.message : 'Unknown error', comparisonId).run();
-      throw error;
-    }
   }
 
   private async processPhase3(photo: Photo): Promise<Partial<Photo>> {
@@ -417,12 +319,11 @@ class PhotoProcessingWorkflow extends WorkflowEntrypoint<Env, PhotoProcessingInp
         'Authorization': `Bearer ${this.env.REPLICATE_API_KEY}`,
         'Content-Type': 'application/json'
       };
-      const version = COMPARISON_MODEL_VERSIONS[model as ComparisonModel];
-      if (!version) throw new Error(`No pinned Replicate version configured for ${model}`);
+      const version = FACE_SWAP_MODEL_VERSIONS[model];
       const response = await fetch('https://api.replicate.com/v1/predictions', {
         method: 'POST',
         headers,
-        body: JSON.stringify({ version, input })
+        body: JSON.stringify(version ? { version, input } : { model, input })
       });
       const prediction = await response.json() as ReplicatePrediction & { detail?: string };
       if (!response.ok) {
