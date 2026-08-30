@@ -69,6 +69,39 @@ async function HandleApiRequest(request: Request, env: any): Promise<Response> {
         return new Response('Method Not Allowed', { status: 405 });
     }
 
+    if (url.pathname === '/api/cancel-fofr-predictions' && request.method === 'POST') {
+        const model = 'fofr/face-swap-with-ideogram';
+        const comparisons = await env.repl_demo_2025_d1.prepare(`
+            SELECT id, prediction
+            FROM PhotoFaceSwapComparisons
+            WHERE model = ? AND status = 'processing' AND prediction IS NOT NULL
+        `).bind(model).all();
+        const results = [];
+        for (const comparison of comparisons.results as Array<{ id: number; prediction: string }>) {
+            const response = await fetch(
+                `https://api.replicate.com/v1/predictions/${comparison.prediction}/cancel`,
+                {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Token ${env.REPLICATE_API_KEY}`
+                    }
+                }
+            );
+            await env.repl_demo_2025_d1.prepare(`
+                UPDATE PhotoFaceSwapComparisons
+                SET status = 'failed', error = ?, update_timestamp = datetime("now")
+                WHERE id = ?
+            `).bind(
+                response.ok ? 'Cancelled by operator' : `Cancellation failed: ${response.status}`,
+                comparison.id
+            ).run();
+            results.push({ id: comparison.id, prediction: comparison.prediction, status: response.status });
+        }
+        return new Response(JSON.stringify(results), {
+            headers: { 'Content-Type': 'application/json' }
+        });
+    }
+
     if (url.pathname.startsWith('/api/photos/') && request.method === 'PATCH') {
         // Update photo
         const photoId = url.pathname.split('/')[3];
