@@ -11,13 +11,13 @@ interface PhotoProcessingInput {
   photoId: number;
 }
 
+// Tried bytedance/seedream-5-lite with "Put me in the second image";
+// it was slower, more expensive, and produced worse results than face swap.
+
 const FACE_SWAP_MODEL_VERSIONS: Record<string, string> = {
   'cdingram/face-swap': 'd1d6ea8c8be89d664a07a457526f7128109dee7030fdac424788d762c71ed111',
   'pikachupichu25/image-faceswap': '94b109952d4dd3cb6e9947340a6a099cc9a4821af8807a879c1f7af92e2a3b00'
 };
-
-// Tried bytedance/seedream-5-lite with "Put me in the second image";
-// it was slower, more expensive, and produced worse results than face swap.
 
 interface Photo {
   id: number;
