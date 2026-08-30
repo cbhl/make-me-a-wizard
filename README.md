@@ -42,8 +42,6 @@ npm run deploy
 
 - The primary application domain is `wizard.xianwen.dev`.
 - New photo uploads and processed photo results use `photos.wizard.xianwen.dev`.
-- Existing database records are not migrated; their stored URLs remain
-  unchanged until a later migration.
 
 ## Development
 
