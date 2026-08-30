@@ -15,8 +15,10 @@ interface PhotoProcessingInput {
 // it was slower, more expensive, and produced worse results than face swap.
 
 const FACE_SWAP_MODEL_VERSIONS: Record<string, string> = {
+  'black-forest-labs/flux-kontext-pro': 'aa776ca45ce7f7d185418f700df8ec6ca6cb367bfd88e9cd225666c4c179d1d7',
   'cdingram/face-swap': 'd1d6ea8c8be89d664a07a457526f7128109dee7030fdac424788d762c71ed111',
-  'pikachupichu25/image-faceswap': '94b109952d4dd3cb6e9947340a6a099cc9a4821af8807a879c1f7af92e2a3b00'
+  'pikachupichu25/image-faceswap': '94b109952d4dd3cb6e9947340a6a099cc9a4821af8807a879c1f7af92e2a3b00',
+  'minimax/hailuo-02-fast': 'cf946ed7081db0e74dd2bec8f4118b2a55b58beb17e9ecc8c64dc3d5334f4a41'
 };
 
 interface Photo {
@@ -94,9 +96,13 @@ class PhotoProcessingWorkflow extends WorkflowEntrypoint<Env, PhotoProcessingInp
       console.log(`Photo found: ${photo.original_r2_url}`);
 
       // Phase 1: flux-kontext-pro
-      console.log(`Starting Phase 1 for photo ${photoId}`);
-      const phase1Updates = await this.processPhase1(photo);
-      Object.assign(photo, phase1Updates);
+      if (await this.hasStoredPhase1Result(photo)) {
+        console.log(`Skipping Phase 1 for photo ${photoId}; a non-empty R2 result exists`);
+      } else {
+        console.log(`Starting Phase 1 for photo ${photoId}`);
+        const phase1Updates = await this.processPhase1(photo);
+        Object.assign(photo, phase1Updates);
+      }
       
       // Phase 2: load-balance the two equivalent face-swap models by photo ID.
       console.log(`Starting Phase 2 for photo ${photoId}`);
@@ -137,6 +143,14 @@ class PhotoProcessingWorkflow extends WorkflowEntrypoint<Env, PhotoProcessingInp
     await this.env.repl_demo_2025_d1.prepare(
       `UPDATE Photos SET ${updateFields}, update_timestamp = datetime("now") WHERE id = ?`
     ).bind(...values).run();
+  }
+
+  private async hasStoredPhase1Result(photo: Photo): Promise<boolean> {
+    if (!photo.phase1_r2_object_path) {
+      return false;
+    }
+    const object = await this.env.R2.head(photo.phase1_r2_object_path);
+    return object !== null && object.size > 0;
   }
 
   private async processPhase1(photo: Photo): Promise<Partial<Photo>> {
@@ -330,7 +344,7 @@ class PhotoProcessingWorkflow extends WorkflowEntrypoint<Env, PhotoProcessingInp
       const response = await fetch('https://api.replicate.com/v1/predictions', {
         method: 'POST',
         headers,
-        body: JSON.stringify(version ? { version, input } : { model, input })
+        body: JSON.stringify({ version: version || model, input })
       });
       const prediction = await response.json() as ReplicatePrediction & { detail?: string };
       if (!response.ok) {
