@@ -11,6 +11,14 @@ interface PhotoProcessingInput {
   photoId: number;
 }
 
+// Tried bytedance/seedream-5-lite with "Put me in the second image";
+// it was slower, more expensive, and produced worse results than face swap.
+
+const FACE_SWAP_MODEL_VERSIONS: Record<string, string> = {
+  'cdingram/face-swap': 'd1d6ea8c8be89d664a07a457526f7128109dee7030fdac424788d762c71ed111',
+  'pikachupichu25/image-faceswap': '94b109952d4dd3cb6e9947340a6a099cc9a4821af8807a879c1f7af92e2a3b00'
+};
+
 interface Photo {
   id: number;
   original_r2_url: string;
@@ -90,7 +98,7 @@ class PhotoProcessingWorkflow extends WorkflowEntrypoint<Env, PhotoProcessingInp
       const phase1Updates = await this.processPhase1(photo);
       Object.assign(photo, phase1Updates);
       
-      // Phase 2: advanced-face-swap
+      // Phase 2: load-balance the two equivalent face-swap models by photo ID.
       console.log(`Starting Phase 2 for photo ${photoId}`);
       const phase2Updates = await this.processPhase2(photo);
       Object.assign(photo, phase2Updates);
@@ -192,44 +200,53 @@ class PhotoProcessingWorkflow extends WorkflowEntrypoint<Env, PhotoProcessingInp
       throw new Error('Phase 1 result not available for Phase 2');
     }
 
-    // Call advanced-face-swap model
-    const prediction = await this.callReplicateModel(
-      'easel/advanced-face-swap',
-      {
-        target_image: photo.phase1_r2_url,
-        swap_image: photo.original_r2_url,
-        upscale: false
-      }
-    );
+    let primaryModel = 'cdingram/face-swap';
+    let fallbackModel = 'pikachupichu25/image-faceswap';
+    if (photo.id % 2 === 0) {
+      [primaryModel, fallbackModel] = [fallbackModel, primaryModel];
+    }
+    try {
+      return await this.processPhase2WithModel(photo, primaryModel);
+    } catch (primaryError) {
+      console.error(`Phase 2 primary model ${primaryModel} failed; trying ${fallbackModel}`, primaryError);
+      return await this.processPhase2WithModel(photo, fallbackModel);
+    }
+  }
 
-    // Update database with prediction
+  private async processPhase2WithModel(photo: Photo, model: string): Promise<Partial<Photo>> {
+    let input: Record<string, string>;
+    switch (model) {
+      case 'cdingram/face-swap':
+        input = {
+          input_image: photo.phase1_r2_url,
+          swap_image: photo.original_r2_url
+        };
+        break;
+      case 'pikachupichu25/image-faceswap':
+        input = {
+          target_image: photo.phase1_r2_url,
+          swap_image: photo.original_r2_url
+        };
+        break;
+      default:
+        throw new Error(`Unsupported Phase 2 model: ${model}`);
+    }
+    const prediction = await this.callReplicateModel(model, input);
     await this.updatePhoto(photo.id, {
       phase2_replicate_prediction: prediction.id,
       phase2_replicate_url: prediction.urls?.get
     });
-
-    // Poll until completion
     const completedPrediction = await this.pollReplicatePrediction(prediction.id);
-    
     if (completedPrediction.status !== 'succeeded') {
-      throw new Error(`Phase 2 failed: ${completedPrediction.error || 'Unknown error'}`);
+      throw new Error(`Phase 2 failed for ${model}: ${completedPrediction.error || 'Unknown error'}`);
     }
-
-    // Download and store result in R2
     const resultUrl = completedPrediction.urls?.get;
-    if (!resultUrl) {
-      throw new Error('Phase 2 completed but no result URL found');
-    }
-
-    // Get the actual result URL and file extension
+    if (!resultUrl) throw new Error(`Phase 2 completed for ${model} but no result URL found`);
     const actualResultUrl = await this.getActualResultUrl(resultUrl);
     const fileExtension = this.getFileExtension(actualResultUrl);
     const r2ObjectPath = `phase2/${photo.id}.${fileExtension}`;
     const r2Url = `https://photos.demo.xianwen.dev/${r2ObjectPath}`;
-
     await this.downloadAndStoreInR2(resultUrl, r2ObjectPath);
-
-    // Update database with R2 info and actual result URL
     const phase2Updates = {
       phase2_replicate_prediction: prediction.id,
       phase2_replicate_url: actualResultUrl,
@@ -237,10 +254,7 @@ class PhotoProcessingWorkflow extends WorkflowEntrypoint<Env, PhotoProcessingInp
       phase2_r2_url: r2Url
     };
     await this.updatePhoto(photo.id, phase2Updates);
-
-    console.log(`Phase 2 completed for photo ${photo.id}`);
-    
-    // Return the updated fields so they can be patched into the photo object
+    console.log(`Phase 2 completed for photo ${photo.id} using ${model}`);
     return phase2Updates;
   }
 
@@ -308,10 +322,20 @@ class PhotoProcessingWorkflow extends WorkflowEntrypoint<Env, PhotoProcessingInp
     console.log(`Input:`, JSON.stringify(input, null, 2));
     
     try {
-      const prediction = await this.replicate.predictions.create({
-        model: model,
-        input: input
+      const headers = {
+        'Authorization': `Bearer ${this.env.REPLICATE_API_KEY}`,
+        'Content-Type': 'application/json'
+      };
+      const version = FACE_SWAP_MODEL_VERSIONS[model];
+      const response = await fetch('https://api.replicate.com/v1/predictions', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(version ? { version, input } : { model, input })
       });
+      const prediction = await response.json() as ReplicatePrediction & { detail?: string };
+      if (!response.ok) {
+        throw new Error(`Replicate API returned ${response.status}: ${prediction.error || prediction.detail || 'Unknown error'}`);
+      }
 
       console.log(`Replicate API call successful for model ${model}, prediction ID: ${prediction.id}`);
       return prediction as ReplicatePrediction;
@@ -382,7 +406,9 @@ class PhotoProcessingWorkflow extends WorkflowEntrypoint<Env, PhotoProcessingInp
       console.log(`Fetched prediction data:`, JSON.stringify(predictionData, null, 2));
 
       // Extract the actual result URL from the output field
-      const actualResultUrl = predictionData.output;
+      const actualResultUrl = Array.isArray(predictionData.output)
+        ? predictionData.output[0]
+        : predictionData.output;
       if (!actualResultUrl) {
         throw new Error('No output URL found in prediction data');
       }
@@ -434,7 +460,9 @@ class PhotoProcessingWorkflow extends WorkflowEntrypoint<Env, PhotoProcessingInp
     const predictionData = await response.json() as any;
     console.log(`Fetched prediction data:`, JSON.stringify(predictionData, null, 2));
 
-    const actualResultUrl = predictionData.output;
+    const actualResultUrl = Array.isArray(predictionData.output)
+      ? predictionData.output[0]
+      : predictionData.output;
     if (!actualResultUrl) {
       throw new Error('No output URL found in prediction data');
     }
