@@ -1,0 +1,17 @@
+{
+  "name": "make-me-a-wizard",
+  "install": "npm ci && WRANGLER_SEND_METRICS=false npx wrangler d1 execute repl-demo-2025-d1 --local --file=schemas/photos.sql",
+  "terminals": [
+    {
+      "name": "wrangler-dev",
+      "command": "WRANGLER_SEND_METRICS=false npx wrangler dev --local --ip 0.0.0.0 --port 8787",
+      "description": "Local Cloudflare Workers dev server (Miniflare) with local D1, R2, KV, and Workflows bindings, serving http://localhost:8787."
+    }
+  ],
+  "ports": [
+    {
+      "name": "wrangler-dev",
+      "port": 8787
+    }
+  ]
+}
