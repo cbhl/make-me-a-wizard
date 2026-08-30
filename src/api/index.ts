@@ -227,7 +227,6 @@ async function HandleApiRequest(request: Request, env: any): Promise<Response> {
     if (url.pathname.startsWith('/api/photos/') && url.pathname.endsWith('/process') && request.method === 'POST') {
         // Trigger photo processing workflow
         const photoId = parseInt(url.pathname.split('/')[3]);
-        
         if (isNaN(photoId)) {
             return new Response(JSON.stringify({ error: 'Invalid photo ID' }), {
                 status: 400,
