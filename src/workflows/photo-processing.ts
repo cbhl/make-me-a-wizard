@@ -13,7 +13,10 @@ interface PhotoProcessingInput {
   comparison?: boolean;
 }
 
-type ComparisonModel = 'fofr/face-swap-with-ideogram' | 'codeplugtech/face-swap';
+type ComparisonModel =
+  | 'fofr/face-swap-with-ideogram'
+  | 'codeplugtech/face-swap'
+  | 'catio-apps/cog-faceswap-catio';
 
 interface Photo {
   id: number;
@@ -264,6 +267,15 @@ class PhotoProcessingWorkflow extends WorkflowEntrypoint<Env, PhotoProcessingInp
           target_image: photo.phase1_r2_url,
           cleanup: false
         }
+      : model === 'catio-apps/cog-faceswap-catio'
+      ? {
+          target_image: photo.phase1_r2_url,
+          source_image: photo.original_r2_url,
+          enable_face_swap: true,
+          enhance_face: true,
+          use_advanced_blending: true,
+          output_format: 'png'
+        }
       : {
           input_image: photo.phase1_r2_url,
           swap_image: photo.original_r2_url
@@ -469,7 +481,9 @@ class PhotoProcessingWorkflow extends WorkflowEntrypoint<Env, PhotoProcessingInp
       console.log(`Fetched prediction data:`, JSON.stringify(predictionData, null, 2));
 
       // Extract the actual result URL from the output field
-      const actualResultUrl = predictionData.output;
+      const actualResultUrl = Array.isArray(predictionData.output)
+        ? predictionData.output[0]
+        : predictionData.output;
       if (!actualResultUrl) {
         throw new Error('No output URL found in prediction data');
       }
@@ -521,7 +535,9 @@ class PhotoProcessingWorkflow extends WorkflowEntrypoint<Env, PhotoProcessingInp
     const predictionData = await response.json() as any;
     console.log(`Fetched prediction data:`, JSON.stringify(predictionData, null, 2));
 
-    const actualResultUrl = predictionData.output;
+    const actualResultUrl = Array.isArray(predictionData.output)
+      ? predictionData.output[0]
+      : predictionData.output;
     if (!actualResultUrl) {
       throw new Error('No output URL found in prediction data');
     }

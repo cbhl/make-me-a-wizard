@@ -3,7 +3,8 @@ import PhotoProcessingWorkflow from '../workflows/photo-processing';
 
 const COMPARISON_MODELS = [
     'fofr/face-swap-with-ideogram',
-    'codeplugtech/face-swap'
+    'codeplugtech/face-swap',
+    'catio-apps/cog-faceswap-catio'
 ] as const;
 
 async function HandleApiRequest(request: Request, env: any): Promise<Response> {
